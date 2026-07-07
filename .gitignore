@@ -1,2 +1,5 @@
-/venv
+# Virtual environment
+venv/
+
+# Local environment file
 config.env
