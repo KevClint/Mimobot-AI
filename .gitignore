@@ -3,3 +3,6 @@ venv/
 
 # Local environment file
 config.env
+
+# Database file
+mimo_bot.db
