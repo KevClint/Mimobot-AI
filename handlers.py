@@ -129,28 +129,32 @@ class MimoAIBot:
         bar = make_bar(used_turns, self.max_history)
 
         lines = [
-            "*Current Session*\n",
-            f"Model: `{provider['name']}`",
-            f"Persona: `{persona_label}`",
+            f"Current Session\n",
+            f"Model: {provider['name']}",
+            f"Persona: {persona_label}",
             f"Memory: {used_turns}/{self.max_history} turns",
-            f"`[{bar}]`\n",
+            f"[{bar}]\n",
         ]
 
         if history:
-            lines.append("*Recent messages:*")
+            lines.append("Recent messages:")
             recent = history[-6:]
             for msg in recent:
                 role = msg.get("role", "?")
-                content = (msg.get("content", "") or "")[:80]
+                content = (msg.get("content", "") or "")[:80].replace("\n", " ")
                 if role == "user":
                     lines.append(f"You: {content}")
                 elif role == "assistant":
                     lines.append(f"AI: {content}")
         else:
-            lines.append("_No messages yet._")
+            lines.append("No messages yet.")
 
-        lines.append("\n/new to clear · /retry to regenerate last reply")
-        await update.message.reply_text("\n".join(lines), parse_mode=ParseMode.MARKDOWN)
+        lines.append("\n/new to clear - /retry to regenerate last reply")
+        text = "\n".join(lines)
+        if len(text) > 4000:
+            await send_reply(update, text)
+        else:
+            await update.message.reply_text(text)
 
     # --- PERSONA ---
     async def persona_cmd(self, update: Update, context: ContextTypes.DEFAULT_TYPE):

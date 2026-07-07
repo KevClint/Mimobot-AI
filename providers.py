@@ -1,13 +1,13 @@
 from typing import Dict, Any
 
 AI_PROVIDERS: Dict[str, Dict[str, Any]] = {
-    "mimo": {
-        "name": "MiMo V2.5 (Free)",
-        "url": "https://api.xiaomimimo.com/v1/chat/completions",
-        "model_id": "mimo-v2.5",
+    "smollm3": {
+        "name": "SmolLM3 3B (Free)",
+        "url": "https://api-inference.huggingface.co/v1/chat/completions",
+        "model_id": "HuggingFaceTB/SmolLM3-3B",
         "is_free": True,
-        "env_key": "MIMO_API_KEY",
-        "group": "mimo"
+        "env_key": "HF_API_KEY",
+        "group": "huggingface"
     },
     "llama": {
         "name": "Llama 3.3 70B (Free)",
@@ -24,7 +24,23 @@ AI_PROVIDERS: Dict[str, Dict[str, Any]] = {
         "is_free": True,
         "env_key": "GROQ_API_KEY",
         "group": "groq"
-    }
+    },
+    "gpt-oss": {
+        "name": "GPT-OSS 20B (Free)",
+        "url": "https://api.groq.com/openai/v1/chat/completions",
+        "model_id": "openai/gpt-oss-20b",
+        "is_free": True,
+        "env_key": "GROQ_API_KEY",
+        "group": "groq"
+    },
+    "mimo": {
+        "name": "MiMo V2.5 (Free)",
+        "url": "https://api.xiaomimimo.com/v1/chat/completions",
+        "model_id": "mimo-v2.5",
+        "is_free": True,
+        "env_key": "MIMO_API_KEY",
+        "group": "mimo"
+    },
 }
 
 PERSONAS: Dict[str, Dict[str, str]] = {
