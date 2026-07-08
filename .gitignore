@@ -7,3 +7,9 @@ config.env
 
 # Database file
 mimo_bot.db
+
+# Log files
+*.log
+
+# Logs
+*.log
