@@ -3,9 +3,9 @@ import time
 import asyncio
 from typing import Dict, Tuple, Any
 
-from telegram import Update, constants, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import Update, constants, InlineKeyboardButton, InlineKeyboardMarkup, InlineQueryResultArticle, InputTextMessageContent
 from telegram.constants import ParseMode
-from telegram.ext import Application, MessageHandler, CommandHandler, CallbackQueryHandler, filters, ContextTypes
+from telegram.ext import Application, MessageHandler, CommandHandler, CallbackQueryHandler, InlineQueryHandler, filters, ContextTypes
 from telegram.error import BadRequest
 
 from mimobot.config import TELEGRAM_TOKEN, ADMIN_IDS, OR_PAGE_SIZE, logger
@@ -56,9 +56,45 @@ class MimoAIBot:
     # --- COMMANDS ---
     async def start(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         chat_id = update.message.chat.id
+        user = update.effective_user
+        username = user.username if user else None
+        display_name = user.full_name if user else None
+
+        exists = await self.db.user_exists(chat_id)
+
+        if self.is_admin(chat_id):
+            if not exists:
+                await self.db.save_user_data(chat_id, [], "mimo", {}, DEFAULT_PERSONA, username, display_name)
+                await self.db.set_user_allowed(chat_id, True)
+            else:
+                await self.db.save_user_data(chat_id, [], "mimo", {}, DEFAULT_PERSONA, username, display_name)
+            await update.message.reply_text(
+                "*Hi, I am your AI Assistant.*\n\n"
+                "Free and BYOK (Bring Your Own Key) models are available.\n\n"
+                "Quick start:\n"
+                "/model - choose your AI engine\n"
+                "/persona - change how I behave\n"
+                "/session - view your current session\n"
+                "/help - full command list",
+                parse_mode=ParseMode.MARKDOWN
+            )
+            return
+
+        if not exists:
+            await self.db.save_user_data(chat_id, [], "mimo", {}, DEFAULT_PERSONA, username, display_name)
+            await update.message.reply_text(
+                "Access denied. Contact an admin to get access."
+            )
+            return
+
+        if not await self.db.is_user_allowed(chat_id):
+            await update.message.reply_text(
+                "Access denied. Contact an admin to get access."
+            )
+            return
+
         history, model, keys, persona = await self.db.get_user_data(chat_id)
-        if not history and model == "mimo" and not keys:
-            await self.db.save_user_data(chat_id, [], "mimo", {}, DEFAULT_PERSONA)
+        await self.db.save_user_data(chat_id, history, model, keys, persona, username, display_name)
         await update.message.reply_text(
             "*Hi, I am your AI Assistant.*\n\n"
             "Free and BYOK (Bring Your Own Key) models are available.\n\n"
@@ -78,6 +114,68 @@ class MimoAIBot:
             chat_id, "Fresh session started. Memory cleared, keys and model kept.",
             parse_mode=ParseMode.MARKDOWN
         )
+
+    async def chat_cmd(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        chat_id = update.message.chat.id
+        user = update.effective_user
+        username = user.username if user else None
+        display_name = user.full_name if user else None
+
+        if not self.is_admin(chat_id) and not await self.db.is_user_allowed(chat_id):
+            if not await self.db.user_exists(chat_id):
+                await self.db.save_user_data(chat_id, [], "mimo", {}, DEFAULT_PERSONA, username, display_name)
+            await update.message.reply_text("Access denied. Contact an admin to get access.")
+            return
+
+        prompt = " ".join(context.args) if context.args else ""
+        if not prompt:
+            await update.message.reply_text(
+                "Usage: `/chat <your message>`",
+                parse_mode=ParseMode.MARKDOWN
+            )
+            return
+
+        if not self._check_daily_limit(chat_id):
+            await update.message.reply_text(f"Daily limit of {self.daily_limit} messages reached. Try again tomorrow.")
+            return
+
+        now = time.time()
+        if now - self.last_msg_time.get(chat_id, 0) < self.min_interval:
+            await update.message.reply_text("Slow down a bit, please.")
+            return
+        self.last_msg_time[chat_id] = now
+
+        await update.message.reply_chat_action(constants.ChatAction.TYPING)
+
+        history, active_model, custom_keys, persona = await self.db.get_user_data(chat_id)
+        persona_data = PERSONAS.get(persona, PERSONAS[DEFAULT_PERSONA])
+        system_prompt = persona_data["prompt"]
+
+        messages = [{"role": "system", "content": system_prompt}, {"role": "user", "content": prompt}]
+
+        providers = self.ai.get_fallback_chain(active_model)
+        reply = None
+
+        for provider in providers:
+            if provider["is_free"]:
+                api_key = os.getenv(provider["env_key"])
+            else:
+                group_name = provider.get("group", active_model)
+                api_key = custom_keys.get(group_name)
+                if not api_key:
+                    continue
+            try:
+                reply = await self.ai.chat(provider, messages, api_key, system_prompt)
+                break
+            except RateLimitError:
+                continue
+            except Exception:
+                continue
+
+        if reply is None:
+            reply = "AI is currently unavailable. Try again later."
+
+        await send_reply(update, reply)
 
     async def reset(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         await self.new_session(update, context)
@@ -207,6 +305,7 @@ class MimoAIBot:
         if section == "commands":
             text = (
                 "*Commands*\n"
+                "/chat <message> - chat with AI (standalone, no memory)\n"
                 "/new - clear memory, keep keys and model\n"
                 "/retry - regenerate the last response\n"
                 "/cancel - cancel an in-progress request\n"
@@ -215,7 +314,13 @@ class MimoAIBot:
                 "/info - view your dashboard\n"
                 "/session - view current session (model, persona, memory)\n"
                 "/setkey <provider> <key> - save a BYOK key (openrouter, deepseek, claude)\n"
-                "/help - this menu"
+                "/help - this menu\n\n"
+                "*Admin Commands*\n"
+                "/adduser @username - whitelist a user\n"
+                "/removeuser @username - revoke access\n"
+                "/listusers - show all users\n"
+                "/stats - bot statistics\n"
+                "/broadcast <message> - send to all users"
             )
         elif section == "keys":
             text = (
@@ -279,6 +384,225 @@ class MimoAIBot:
 
         await asyncio.gather(*(send_one(uid) for uid in ids), return_exceptions=True)
         await status.edit_text(f"Broadcast done. Sent: {sent}, Failed: {failed}")
+
+    # --- WHITELIST MANAGEMENT ---
+    async def adduser_cmd(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        chat_id = update.message.chat.id
+        if not self.is_admin(chat_id):
+            await update.message.reply_text("Not authorized.")
+            return
+
+        target_id = None
+        target_label = None
+
+        if update.message.reply_to_message:
+            target_id = update.message.reply_to_message.from_user.id
+            target_label = update.message.reply_to_message.from_user.username
+            if not target_id:
+                await update.message.reply_text("Could not identify the replied user.")
+                return
+        elif context.args:
+            arg = context.args[0]
+            if arg.lstrip("-").isdigit():
+                target_id = int(arg)
+                if not await self.db.get_user_by_id(target_id):
+                    await update.message.reply_text(
+                        f"ID `{target_id}` not found. They need to message the bot first.",
+                        parse_mode=ParseMode.MARKDOWN
+                    )
+                    return
+                target_label = None
+            else:
+                target_id = await self.db.get_user_by_username(arg)
+                target_label = arg
+                if not target_id:
+                    await update.message.reply_text(
+                        f"User `{arg}` not found. They need to message the bot first.",
+                        parse_mode=ParseMode.MARKDOWN
+                    )
+                    return
+        else:
+            await update.message.reply_text(
+                "Usage: `/adduser @username`, `/adduser <chat_id>`, or reply to a message with `/adduser`",
+                parse_mode=ParseMode.MARKDOWN
+            )
+            return
+
+        await self.db.set_user_allowed(target_id, True)
+        label = f"@{target_label}" if target_label else str(target_id)
+        await update.message.reply_text(f"User {label} has been whitelisted.")
+
+    async def removeuser_cmd(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        chat_id = update.message.chat.id
+        if not self.is_admin(chat_id):
+            await update.message.reply_text("Not authorized.")
+            return
+
+        target_id = None
+        target_label = None
+
+        if update.message.reply_to_message:
+            target_id = update.message.reply_to_message.from_user.id
+            target_label = update.message.reply_to_message.from_user.username
+            if not target_id:
+                await update.message.reply_text("Could not identify the replied user.")
+                return
+        elif context.args:
+            arg = context.args[0]
+            if arg.lstrip("-").isdigit():
+                target_id = int(arg)
+                if not await self.db.get_user_by_id(target_id):
+                    await update.message.reply_text(
+                        f"ID `{target_id}` not found.",
+                        parse_mode=ParseMode.MARKDOWN
+                    )
+                    return
+                target_label = None
+            else:
+                target_id = await self.db.get_user_by_username(arg)
+                target_label = arg
+                if not target_id:
+                    await update.message.reply_text(
+                        f"User `{arg}` not found.",
+                        parse_mode=ParseMode.MARKDOWN
+                    )
+                    return
+        else:
+            await update.message.reply_text(
+                "Usage: `/removeuser @username`, `/removeuser <chat_id>`, or reply to a message with `/removeuser`",
+                parse_mode=ParseMode.MARKDOWN
+            )
+            return
+
+        await self.db.set_user_allowed(target_id, False)
+        label = f"@{target_label}" if target_label else str(target_id)
+        await update.message.reply_text(f"User {label} has been removed.")
+
+    async def listusers_cmd(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        chat_id = update.message.chat.id
+        if not self.is_admin(chat_id):
+            await update.message.reply_text("Not authorized.")
+            return
+
+        users = await self.db.get_all_users()
+        if not users:
+            await update.message.reply_text("No users found.")
+            return
+
+        allowed_count = sum(1 for u in users if u["is_allowed"])
+        pending_count = len(users) - allowed_count
+        lines = [f"All Users ({len(users)}):\n"]
+
+        for u in users:
+            status = "✅" if u["is_allowed"] else "❌"
+            name_parts = []
+            if u["username"]:
+                name_parts.append(f"@{u['username']}")
+            if u["display_name"]:
+                name_parts.append(f"({u['display_name']})")
+            if not name_parts:
+                name_parts.append(f"(ID: {u['chat_id']})")
+            else:
+                name_parts.append(f"(ID: {u['chat_id']})")
+            lines.append(f"{status} {' '.join(name_parts)}")
+
+        lines.append(f"\n✅ Allowed ({allowed_count})  ❌ Pending ({pending_count})")
+        await update.message.reply_text("\n".join(lines))
+
+    # --- INLINE QUERY ---
+    async def inline_query_handler(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        query = update.inline_query
+        if not query:
+            return
+
+        user = query.from_user
+        chat_id = user.id
+        text = query.query.strip()
+
+        if not text.startswith("/chat"):
+            return
+
+        prompt = text[len("/chat"):].strip()
+        if not prompt:
+            results = [
+                InlineQueryResultArticle(
+                    id="help",
+                    title="Usage",
+                    description="Type /chat <your message>",
+                    input_message_content=InputTextMessageContent(
+                        "Usage: `@kvlraiBot /chat <your message>`",
+                        parse_mode=ParseMode.MARKDOWN
+                    )
+                )
+            ]
+            await query.answer(results, cache_time=0)
+            return
+
+        if not self.is_admin(chat_id) and not await self.db.is_user_allowed(chat_id):
+            return
+
+        if not self._check_daily_limit(chat_id):
+            results = [
+                InlineQueryResultArticle(
+                    id="limit",
+                    title="Daily limit reached",
+                    description=f"You've reached the {self.daily_limit} message daily limit.",
+                    input_message_content=InputTextMessageContent(
+                        f"Daily limit of {self.daily_limit} messages reached. Try again tomorrow."
+                    )
+                )
+            ]
+            await query.answer(results, cache_time=0)
+            return
+
+        thinking_results = [
+            InlineQueryResultArticle(
+                id="thinking",
+                title="Thinking...",
+                description=prompt[:100],
+                input_message_content=InputTextMessageContent("Thinking...")
+            )
+        ]
+        await query.answer(thinking_results, cache_time=0)
+
+        history, active_model, custom_keys, persona = await self.db.get_user_data(chat_id)
+        persona_data = PERSONAS.get(persona, PERSONAS[DEFAULT_PERSONA])
+        system_prompt = persona_data["prompt"]
+
+        messages = [{"role": "system", "content": system_prompt}, {"role": "user", "content": prompt}]
+
+        providers = self.ai.get_fallback_chain(active_model)
+        reply = None
+
+        for provider in providers:
+            if provider["is_free"]:
+                api_key = os.getenv(provider["env_key"])
+            else:
+                group_name = provider.get("group", active_model)
+                api_key = custom_keys.get(group_name)
+                if not api_key:
+                    continue
+            try:
+                reply = await self.ai.chat(provider, messages, api_key, system_prompt)
+                break
+            except RateLimitError:
+                continue
+            except Exception:
+                continue
+
+        if reply is None:
+            reply = "AI is currently unavailable. Try again later."
+
+        source_chat = query.inline_message_id
+        if source_chat:
+            try:
+                await context.bot.send_message(
+                    chat_id=chat_id,
+                    text=f"*{prompt}*\n\n{reply}",
+                    parse_mode=ParseMode.MARKDOWN
+                )
+            except BadRequest:
+                await context.bot.send_message(chat_id=chat_id, text=reply)
 
     # --- API KEY MANAGEMENT ---
     async def setkey_cmd(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -417,6 +741,12 @@ class MimoAIBot:
         user_text = update.message.text
         now = time.time()
 
+        if not self.is_admin(chat_id) and not await self.db.is_user_allowed(chat_id):
+            await update.message.reply_text(
+                "Access denied. Contact an admin to get access."
+            )
+            return
+
         if now - self.last_msg_time.get(chat_id, 0) < self.min_interval:
             await update.message.reply_text("Slow down a bit, please.")
             return
@@ -497,6 +827,7 @@ def main():
 
     app.add_handler(CommandHandler("start", bot.start))
     app.add_handler(CommandHandler("new", bot.new_session))
+    app.add_handler(CommandHandler("chat", bot.chat_cmd))
     app.add_handler(CommandHandler("reset", bot.reset))
     app.add_handler(CommandHandler("retry", bot.retry_cmd))
     app.add_handler(CommandHandler("cancel", bot.cancel_cmd))
@@ -508,12 +839,17 @@ def main():
     app.add_handler(CommandHandler("help", bot.help_cmd))
     app.add_handler(CommandHandler("stats", bot.stats_cmd))
     app.add_handler(CommandHandler("broadcast", bot.broadcast_cmd))
+    app.add_handler(CommandHandler("adduser", bot.adduser_cmd))
+    app.add_handler(CommandHandler("removeuser", bot.removeuser_cmd))
+    app.add_handler(CommandHandler("listusers", bot.listusers_cmd))
 
     app.add_handler(CallbackQueryHandler(bot.model_callback, pattern="^setmodel_"))
     app.add_handler(CallbackQueryHandler(bot.persona_callback, pattern="^setpersona_"))
     app.add_handler(CallbackQueryHandler(bot.help_callback, pattern="^help_"))
     app.add_handler(CallbackQueryHandler(bot.browse_callback, pattern="^browse_"))
     app.add_handler(CallbackQueryHandler(bot.browse_set_callback, pattern="^browseset_"))
+
+    app.add_handler(InlineQueryHandler(bot.inline_query_handler))
 
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, bot.handle_message))
 
