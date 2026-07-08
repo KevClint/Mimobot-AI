@@ -65,7 +65,7 @@ python bot.py
 
 ## Step 3: Get API Keys (Optional)
 
-MiMoBot works out of the box with free models, but you can add your own keys for more options:
+MiMoBot works out of the box with free models (only in telegram bot, if you are using it locally u need the API keys), but you can add your own keys for more options:
 
 ### HuggingFace (for Gemma, Qwen, Mistral)
 
