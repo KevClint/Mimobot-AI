@@ -1,4 +1,4 @@
-# MiMoBot AI Setup Guide
+# Kevlarbot AI Setup Guide
 
 This page contains detailed install, configuration, and troubleshooting notes.
 
@@ -9,8 +9,8 @@ This page contains detailed install, configuration, and troubleshooting notes.
 Clone the repo, configure your keys, and run with Docker:
 
 ```bash
-git clone https://github.com/KevClint/Mimobot-AI.git
-cd Mimobot-AI
+git clone https://github.com/KevClint/Kevlarbot-AI.git
+cd Kevlarbot-AI
 copy config.example.env config.env
 # Edit config.env with your keys, then:
 docker compose up -d --build
@@ -21,8 +21,8 @@ docker compose up -d --build
 Clone the repo, create a virtual environment, install dependencies, configure your keys, and run the bot.
 
 ```bash
-git clone https://github.com/KevClint/Mimobot-AI.git
-cd Mimobot-AI
+git clone https://github.com/KevClint/Kevlarbot-AI.git
+cd Kevlarbot-AI
 python -m venv venv
 .\venv\Scripts\Activate.ps1   # Windows
 pip install -r requirements.txt
@@ -188,7 +188,7 @@ pip install -r requirements.txt
 You need to activate the venv each time you open a new terminal:
 
 ```powershell
-cd Mimobot-AI
+cd Kevlarbot-AI
 .\venv\Scripts\Activate.ps1
 python bot.py
 ```
@@ -221,7 +221,7 @@ pip install -r requirements.txt
 You need to activate the venv each time you open a new terminal:
 
 ```bash
-cd ~/Mimobot-AI
+cd ~/Kevlarbot-AI
 source venv/bin/activate
 python bot.py
 ```
@@ -229,7 +229,7 @@ python bot.py
 Or run directly without activating:
 
 ```bash
-~/Mimobot-AI/venv/bin/python bot.py
+~/Kevlarbot-AI/venv/bin/python bot.py
 ```
 
 ---
@@ -387,14 +387,14 @@ docker compose logs mimobot
 Common issues:
 - Missing `config.env` file
 - Invalid `TELEGRAM_TOKEN`
-- Port conflicts (MimobotAI doesn't use ports, so this is rare)
+- Port conflicts (Kevlarbot AI doesn't use ports, so this is rare)
 
 ---
 
 ## Project Structure
 
 ```
-Mimobot-AI/
+Kevlarbot-AI/
 ├── bot.py                  # Entry point
 ├── Dockerfile              # Docker build file
 ├── src/

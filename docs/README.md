@@ -1,6 +1,6 @@
 <div align="center">
 
-# MiMoBot AI
+# Kevlarbot AI
 
 **Multi-provider AI chatbot for Telegram**
 
@@ -25,8 +25,8 @@
 ## Quick Start
 
 ```bash
-git clone https://github.com/KevClint/Mimobot-AI.git
-cd Mimobot-AI
+git clone https://github.com/KevClint/Kevlarbot-AI.git
+cd Kevlarbot-AI
 python -m venv venv
 .\venv\Scripts\Activate.ps1
 pip install -r requirements.txt
@@ -37,8 +37,8 @@ python bot.py
 ### Docker
 
 ```bash
-git clone https://github.com/KevClint/Mimobot-AI.git
-cd Mimobot-AI
+git clone https://github.com/KevClint/Kevlarbot-AI.git
+cd Kevlarbot-AI
 docker compose up -d --build
 ```
 
