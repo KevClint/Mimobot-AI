@@ -71,7 +71,7 @@ docker compose up -d --build
 | `/stats` | View user count *(admin)* |
 | `/broadcast <msg>` | Send to all users *(admin)* |
 
-## Free Models
+## Free Models (in telegram bot only)
 
 | Key | Model | Provider |
 |-----|-------|----------|
