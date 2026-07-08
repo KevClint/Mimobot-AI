@@ -24,15 +24,6 @@
 
 ## Quick Start
 
-### Docker (Recommended)
-
-```bash
-cd D:\Docker
-docker compose up -d --build mimobot
-```
-
-### Manual
-
 ```bash
 git clone https://github.com/KevClint/Mimobot-AI.git
 cd Mimobot-AI
@@ -41,6 +32,14 @@ python -m venv venv
 pip install -r requirements.txt
 copy config.example.env config.env
 python bot.py
+```
+
+### Docker
+
+```bash
+git clone https://github.com/KevClint/Mimobot-AI.git
+cd Mimobot-AI
+docker compose up -d --build
 ```
 
 > **New?** Follow the full [Setup Guide](setup.md) for detailed installation, configuration, and troubleshooting instructions.

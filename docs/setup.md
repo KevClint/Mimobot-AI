@@ -13,7 +13,7 @@ git clone https://github.com/KevClint/Mimobot-AI.git
 cd Mimobot-AI
 copy config.example.env config.env
 # Edit config.env with your keys, then:
-docker compose up -d --build mimobot
+docker compose up -d --build
 ```
 
 ### Manual
@@ -131,8 +131,7 @@ Paste the output into `ENCRYPTION_KEY` in `config.env`.
 ### Docker (Recommended)
 
 ```bash
-cd D:\Docker
-docker compose up -d --build mimobot
+docker compose up -d --build
 ```
 
 To view logs:
@@ -189,7 +188,7 @@ pip install -r requirements.txt
 You need to activate the venv each time you open a new terminal:
 
 ```powershell
-cd D:\Docker\mimobot
+cd Mimobot-AI
 .\venv\Scripts\Activate.ps1
 python bot.py
 ```
@@ -197,7 +196,7 @@ python bot.py
 Or run directly without activating:
 
 ```powershell
-D:\Docker\mimobot\venv\Scripts\python.exe bot.py
+.\venv\Scripts\python.exe bot.py
 ```
 
 ---
@@ -371,11 +370,10 @@ Make sure you're in the project root directory and the virtual environment is ac
 
 ### Docker build fails
 
-Make sure Docker Desktop is running and you're in the correct directory:
+Make sure Docker Desktop is running and you're in the project directory:
 
 ```bash
-cd D:\Docker
-docker compose up -d --build mimobot
+docker compose up -d --build
 ```
 
 ### Container keeps restarting
