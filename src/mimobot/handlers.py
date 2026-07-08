@@ -17,7 +17,7 @@ from mimobot.utils import safe_delete, send_reply, make_bar
 
 class MimoAIBot:
     def __init__(self):
-        self.max_history = 10
+        self.max_history = 5
         self.min_interval = 2.0
         self.daily_limit = 100
         self.db = MimoDB()
