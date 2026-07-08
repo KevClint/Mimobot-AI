@@ -10,7 +10,4 @@ mimo_bot.db
 
 # Log files
 *.log
-
-# Logs
-*.log
 *.pid
