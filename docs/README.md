@@ -24,6 +24,15 @@
 
 ## Quick Start
 
+### Docker (Recommended)
+
+```bash
+cd D:\Docker
+docker compose up -d --build mimobot
+```
+
+### Manual
+
 ```bash
 git clone https://github.com/KevClint/Mimobot-AI.git
 cd Mimobot-AI
@@ -88,6 +97,7 @@ python bot.py
 
 ```
 ├── bot.py                  # Entry point
+├── Dockerfile              # Docker build file
 ├── src/
 │   └── mimobot/
 │       ├── __init__.py
@@ -99,7 +109,7 @@ python bot.py
 │       └── utils.py        # Utility functions
 ├── docs/
 │   ├── README.md
-│   └── tutorial.md
+│   └── setup.md
 ├── config.env              # Environment variables (git-ignored)
 ├── mimo_bot.db             # SQLite database (git-ignored)
 ├── requirements.txt

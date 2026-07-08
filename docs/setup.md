@@ -4,6 +4,20 @@ This page contains detailed install, configuration, and troubleshooting notes.
 
 ## Quick Start
 
+### Docker (Recommended)
+
+Clone the repo, configure your keys, and run with Docker:
+
+```bash
+git clone https://github.com/KevClint/Mimobot-AI.git
+cd Mimobot-AI
+copy config.example.env config.env
+# Edit config.env with your keys, then:
+docker compose up -d --build mimobot
+```
+
+### Manual
+
 Clone the repo, create a virtual environment, install dependencies, configure your keys, and run the bot.
 
 ```bash
@@ -20,7 +34,8 @@ python bot.py
 
 ## Prerequisites
 
-- Python 3.11 or higher
+- Python 3.11 or higher (manual install only)
+- Docker Desktop (for Docker setup)
 - A Telegram account
 - (Optional) API keys for additional models
 
@@ -113,6 +128,27 @@ Paste the output into `ENCRYPTION_KEY` in `config.env`.
 
 ## Step 5: Run the Bot
 
+### Docker (Recommended)
+
+```bash
+cd D:\Docker
+docker compose up -d --build mimobot
+```
+
+To view logs:
+
+```bash
+docker compose logs -f mimobot
+```
+
+To stop:
+
+```bash
+docker compose stop mimobot
+```
+
+### Manual
+
 ```bash
 python bot.py
 ```
@@ -153,7 +189,7 @@ pip install -r requirements.txt
 You need to activate the venv each time you open a new terminal:
 
 ```powershell
-cd D:\Development\Mimobot AI
+cd D:\Docker\mimobot
 .\venv\Scripts\Activate.ps1
 python bot.py
 ```
@@ -161,7 +197,7 @@ python bot.py
 Or run directly without activating:
 
 ```powershell
-D:\Development\Mimobot AI\venv\Scripts\python.exe bot.py
+D:\Docker\mimobot\venv\Scripts\python.exe bot.py
 ```
 
 ---
@@ -333,6 +369,28 @@ Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
 
 Make sure you're in the project root directory and the virtual environment is activated.
 
+### Docker build fails
+
+Make sure Docker Desktop is running and you're in the correct directory:
+
+```bash
+cd D:\Docker
+docker compose up -d --build mimobot
+```
+
+### Container keeps restarting
+
+Check the logs for errors:
+
+```bash
+docker compose logs mimobot
+```
+
+Common issues:
+- Missing `config.env` file
+- Invalid `TELEGRAM_TOKEN`
+- Port conflicts (MimobotAI doesn't use ports, so this is rare)
+
 ---
 
 ## Project Structure
@@ -340,6 +398,7 @@ Make sure you're in the project root directory and the virtual environment is ac
 ```
 Mimobot-AI/
 ├── bot.py                  # Entry point
+├── Dockerfile              # Docker build file
 ├── src/
 │   └── mimobot/
 │       ├── __init__.py
