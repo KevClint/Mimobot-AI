@@ -1,29 +1,37 @@
 from typing import Dict, Any
 
 AI_PROVIDERS: Dict[str, Dict[str, Any]] = {
-    "smollm3": {
-        "name": "SmolLM3 3B (Free)",
+    "gemma-2b": {
+        "name": "Gemma 2 2B (Free)",
         "url": "https://api-inference.huggingface.co/v1/chat/completions",
-        "model_id": "HuggingFaceTB/SmolLM3-3B",
+        "model_id": "google/gemma-2-2b-it",
         "is_free": True,
         "env_key": "HF_API_KEY",
         "group": "huggingface"
     },
-    "llama": {
-        "name": "Llama 3.3 70B (Free)",
+    "qwen-3b": {
+        "name": "Qwen2.5 3B (Free)",
+        "url": "https://api-inference.huggingface.co/v1/chat/completions",
+        "model_id": "Qwen/Qwen2.5-3B-Instruct",
+        "is_free": True,
+        "env_key": "HF_API_KEY",
+        "group": "huggingface"
+    },
+    "llama-8b": {
+        "name": "Llama 3.1 8B (Free)",
         "url": "https://api.groq.com/openai/v1/chat/completions",
-        "model_id": "llama-3.3-70b-versatile",
+        "model_id": "llama-3.1-8b-instant",
         "is_free": True,
         "env_key": "GROQ_API_KEY",
         "group": "groq"
     },
-    "qwen": {
-        "name": "Qwen 3.6 27B (Free)",
-        "url": "https://api.groq.com/openai/v1/chat/completions",
-        "model_id": "qwen/qwen3.6-27b",
+    "mistral-nemo": {
+        "name": "Mistral Nemo 12B (Free)",
+        "url": "https://api-inference.huggingface.co/v1/chat/completions",
+        "model_id": "mistralai/Mistral-Nemo-Instruct-2407",
         "is_free": True,
-        "env_key": "GROQ_API_KEY",
-        "group": "groq"
+        "env_key": "HF_API_KEY",
+        "group": "huggingface"
     },
     "gpt-oss": {
         "name": "GPT-OSS 20B (Free)",
