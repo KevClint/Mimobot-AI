@@ -4,8 +4,8 @@ from typing import List, Dict, Tuple, Optional
 
 import aiosqlite
 
-from config import get_fernet, logger
-from providers import DEFAULT_PERSONA
+from mimobot.config import get_fernet, logger
+from mimobot.providers import DEFAULT_PERSONA
 
 
 class MimoDB:

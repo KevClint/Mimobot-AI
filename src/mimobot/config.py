@@ -1,9 +1,12 @@
 import os
 import logging
+from pathlib import Path
 from dotenv import load_dotenv
 from cryptography.fernet import Fernet
 
-load_dotenv("config.env")
+# Load config.env from project root (two levels up from this file)
+_project_root = Path(__file__).parent.parent.parent
+load_dotenv(_project_root / "config.env")
 
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 ADMIN_IDS = {int(x) for x in os.getenv("ADMIN_IDS", "").replace(" ", "").split(",") if x}

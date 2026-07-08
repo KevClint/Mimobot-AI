@@ -8,11 +8,11 @@ from telegram.constants import ParseMode
 from telegram.ext import Application, MessageHandler, CommandHandler, CallbackQueryHandler, filters, ContextTypes
 from telegram.error import BadRequest
 
-from config import TELEGRAM_TOKEN, ADMIN_IDS, OR_PAGE_SIZE, logger
-from providers import AI_PROVIDERS, PERSONAS, DEFAULT_PERSONA, BROWSE_GROUPS, ANTHROPIC_GROUPS
-from database import MimoDB
-from ai_client import AIClient, AuthError, RateLimitError
-from utils import safe_delete, send_reply, make_bar
+from mimobot.config import TELEGRAM_TOKEN, ADMIN_IDS, OR_PAGE_SIZE, logger
+from mimobot.providers import AI_PROVIDERS, PERSONAS, DEFAULT_PERSONA, BROWSE_GROUPS, ANTHROPIC_GROUPS
+from mimobot.database import MimoDB
+from mimobot.ai_client import AIClient, AuthError, RateLimitError
+from mimobot.utils import safe_delete, send_reply, make_bar
 
 
 class MimoAIBot:

@@ -5,8 +5,8 @@ from typing import List, Dict, Any
 
 import httpx
 
-from config import logger
-from providers import AI_PROVIDERS, BROWSE_GROUPS, ANTHROPIC_GROUPS
+from mimobot.config import logger
+from mimobot.providers import AI_PROVIDERS, BROWSE_GROUPS, ANTHROPIC_GROUPS
 
 
 class AIClient:
@@ -38,7 +38,7 @@ class AIClient:
         return providers
 
     async def get_group_models(self, group: str, api_key: str) -> List[Dict[str, str]]:
-        from config import OR_CACHE_TTL
+        from mimobot.config import OR_CACHE_TTL
         g = BROWSE_GROUPS[group]
         now = time.time()
         cached = self._model_cache.get(group, {"data": [], "ts": 0})

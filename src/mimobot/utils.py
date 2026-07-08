@@ -5,7 +5,7 @@ from telegram import Update
 from telegram.constants import ParseMode
 from telegram.error import BadRequest
 
-from config import TELEGRAM_MSG_LIMIT
+from mimobot.config import TELEGRAM_MSG_LIMIT
 
 
 async def safe_delete(message):
