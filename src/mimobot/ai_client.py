@@ -94,10 +94,10 @@ class AIClient:
         if is_anthropic:
             headers = {"x-api-key": api_key, "anthropic-version": "2023-06-01"}
             body = {"model": provider["model_id"], "system": system_prompt,
-                    "messages": [m for m in messages if m.get("role") != "system"], "max_tokens": 384}
+                    "messages": [m for m in messages if m.get("role") != "system"], "max_tokens": 256}
         else:
             headers = {"Authorization": f"Bearer {api_key}"}
-            body = {"model": provider["model_id"], "messages": messages, "max_tokens": 384}
+            body = {"model": provider["model_id"], "messages": messages, "max_tokens": 256}
 
         response = await self.http_client.post(provider["url"], json=body, headers=headers)
 
