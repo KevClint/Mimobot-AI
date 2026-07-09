@@ -1,13 +1,42 @@
 # Virtual environment
+.venv/
 venv/
-__pycache__/
 
-# Local environment file
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg-info/
+*.egg
+dist/
+build/
+.eggs/
+
+# Environments
+.env
 config.env
 
-# Database file
-kevlarbot.db
+# Database
+*.db
 
-# Log files
+# Logs
 *.log
 *.pid
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Ruff
+.ruff_cache/
+
+# Docker
+docker-compose.override.yml

@@ -1,0 +1,9 @@
+services:
+  kevlarbot:
+    build: .
+    container_name: kevlarbot
+    restart: unless-stopped
+    env_file:
+      - config.env
+    volumes:
+      - ./kevlarbot.db:/app/kevlarbot.db

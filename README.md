@@ -29,8 +29,8 @@ git clone https://github.com/KevClint/Kevlarbot-AI.git
 cd Kevlarbot-AI
 python -m venv venv
 .\venv\Scripts\Activate.ps1
-pip install -r requirements.txt
-copy config.example.env config.env
+pip install -e .
+copy .env.example config.env
 python bot.py
 ```
 
@@ -39,10 +39,12 @@ python bot.py
 ```bash
 git clone https://github.com/KevClint/Kevlarbot-AI.git
 cd Kevlarbot-AI
+copy .env.example config.env
+# Edit config.env with your keys, then:
 docker compose up -d --build
 ```
 
-> **New?** Follow the full [Setup Guide](setup.md) for detailed installation, configuration, and troubleshooting instructions.
+> **New?** Follow the full [Setup Guide](docs/setup.md) for detailed installation, configuration, and troubleshooting instructions.
 
 ## Environment Variables
 
@@ -71,7 +73,7 @@ docker compose up -d --build
 | `/stats` | View user count *(admin)* |
 | `/broadcast <msg>` | Send to all users *(admin)* |
 
-## Free Models (in telegram bot only)
+## Free Models
 
 | Key | Model | Provider |
 |-----|-------|----------|
@@ -96,21 +98,29 @@ docker compose up -d --build
 
 ```
 ├── bot.py                  # Entry point
-├── Dockerfile              # Docker build file
+├── pyproject.toml          # Build config & dependencies
+├── docker-compose.yml      # Docker Compose service
+├── Dockerfile
+├── .env.example            # Environment template
 ├── src/
 │   └── kevlarbot/
 │       ├── __init__.py
-│       ├── handlers.py     # Command & callback handlers
+│       ├── handlers/       # Command & callback handlers
+│       │   ├── __init__.py
+│       │   ├── base.py     # Shared state & helpers
+│       │   ├── admin.py    # Admin panel & user management
+│       │   ├── chat.py     # AI chat & inline queries
+│       │   ├── models.py   # Model selection & BYOK
+│       │   ├── settings.py # Settings & persona
+│       │   └── help.py     # Help menu
 │       ├── ai_client.py    # AI provider client
 │       ├── database.py     # SQLite database layer
 │       ├── providers.py    # Provider & persona definitions
 │       ├── config.py       # Configuration & encryption
 │       └── utils.py        # Utility functions
+├── tests/
 ├── docs/
-│   ├── README.md
 │   └── setup.md
-├── config.env              # Environment variables (git-ignored)
-├── kevlarbot.db             # SQLite database (git-ignored)
 ├── requirements.txt
 └── LICENSE
 ```

@@ -11,7 +11,7 @@ Clone the repo, configure your keys, and run with Docker:
 ```bash
 git clone https://github.com/KevClint/Kevlarbot-AI.git
 cd Kevlarbot-AI
-copy config.example.env config.env
+copy .env.example config.env
 # Edit config.env with your keys, then:
 docker compose up -d --build
 ```
@@ -25,8 +25,8 @@ git clone https://github.com/KevClint/Kevlarbot-AI.git
 cd Kevlarbot-AI
 python -m venv venv
 .\venv\Scripts\Activate.ps1   # Windows
-pip install -r requirements.txt
-copy config.example.env config.env
+pip install -e .
+copy .env.example config.env
 python bot.py
 ```
 
@@ -98,7 +98,7 @@ Users can add their own keys via the `/setkey` command in Telegram. No server-si
 Copy the example config and fill in your values:
 
 ```bash
-copy config.example.env config.env
+copy .env.example config.env
 ```
 
 Open `config.env` and edit:
@@ -180,7 +180,7 @@ Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
 ### Install Dependencies
 
 ```powershell
-pip install -r requirements.txt
+pip install -e .
 ```
 
 ### Run
@@ -213,7 +213,7 @@ source venv/bin/activate
 ### Install Dependencies
 
 ```bash
-pip install -r requirements.txt
+pip install -e .
 ```
 
 ### Run
@@ -236,9 +236,9 @@ Or run directly without activating:
 
 ## Configuration Reference
 
-### Rate Limits (in `src/kevlarbot/handlers.py`)
+### Rate Limits (in `src/kevlarbot/handlers/base.py`)
 
-Edit these values in the `MimoAIBot.__init__` method:
+Edit these values in the `MimoAIBotBase.__init__` method:
 
 ```python
 self.max_history = 10      # Messages kept in context
@@ -366,7 +366,7 @@ Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
 
 ### Module not found errors
 
-Make sure you're in the project root directory and the virtual environment is activated.
+Make sure you're in the project root directory and the virtual environment is activated. If using `pip install -e .`, the package should be importable.
 
 ### Docker build fails
 
@@ -396,21 +396,29 @@ Common issues:
 ```
 Kevlarbot-AI/
 ├── bot.py                  # Entry point
-├── Dockerfile              # Docker build file
+├── pyproject.toml          # Build config & dependencies
+├── docker-compose.yml      # Docker Compose service
+├── Dockerfile
+├── .env.example            # Environment template
 ├── src/
 │   └── kevlarbot/
 │       ├── __init__.py
-│       ├── handlers.py     # Command & callback handlers
+│       ├── handlers/       # Command & callback handlers
+│       │   ├── __init__.py
+│       │   ├── base.py     # Shared state & helpers
+│       │   ├── admin.py    # Admin panel & user management
+│       │   ├── chat.py     # AI chat & inline queries
+│       │   ├── models.py   # Model selection & BYOK
+│       │   ├── settings.py # Settings & persona
+│       │   └── help.py     # Help menu
 │       ├── ai_client.py    # AI provider client
 │       ├── database.py     # SQLite database layer
 │       ├── providers.py    # Provider & persona definitions
 │       ├── config.py       # Configuration & encryption
 │       └── utils.py        # Utility functions
+├── tests/
 ├── docs/
-│   ├── README.md
 │   └── setup.md
-├── config.env              # Environment variables (git-ignored)
-├── kevlarbot.db             # SQLite database (git-ignored)
 ├── requirements.txt
 └── LICENSE
 ```
