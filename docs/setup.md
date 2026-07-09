@@ -45,7 +45,7 @@ python bot.py
 
 1. Open Telegram and search for **@BotFather**
 2. Send `/newbot`
-3. Enter a **name** for your bot (e.g., `MiMoBot`)
+3. Enter a **name** for your bot (e.g., `KevlarBot AI`)
 4. Enter a **username** for your bot (must end in `bot`, e.g., `MiMoAI_bot`)
 5. BotFather will give you a token like: `123456789:ABCdefGHIjklMNOpqrsTUVwxyz`
 6. Copy this token — you'll need it for `config.env`
@@ -65,7 +65,7 @@ python bot.py
 
 ## Step 3: Get API Keys (Optional)
 
-MiMoBot works out of the box with free models (only in telegram bot, if you are using it locally u need the API keys), but you can add your own keys for more options:
+KevlarBot AI works out of the box with free models (only in telegram bot, if you are using it locally u need the API keys), but you can add your own keys for more options:
 
 ### HuggingFace (for Gemma, Qwen, Mistral)
 
@@ -137,13 +137,13 @@ docker compose up -d --build
 To view logs:
 
 ```bash
-docker compose logs -f mimobot
+docker compose logs -f kevlarbot
 ```
 
 To stop:
 
 ```bash
-docker compose stop mimobot
+docker compose stop kevlarbot
 ```
 
 ### Manual
@@ -236,7 +236,7 @@ Or run directly without activating:
 
 ## Configuration Reference
 
-### Rate Limits (in `src/mimobot/handlers.py`)
+### Rate Limits (in `src/kevlarbot/handlers.py`)
 
 Edit these values in the `MimoAIBot.__init__` method:
 
@@ -246,13 +246,13 @@ self.min_interval = 2.0    # Seconds between messages per user
 self.daily_limit = 100     # Max messages per user per day
 ```
 
-### Telegram Message Limit (in `src/mimobot/config.py`)
+### Telegram Message Limit (in `src/kevlarbot/config.py`)
 
 ```python
 TELEGRAM_MSG_LIMIT = 4000  # Max characters per message
 ```
 
-### OpenRouter Settings (in `src/mimobot/config.py`)
+### OpenRouter Settings (in `src/kevlarbot/config.py`)
 
 ```python
 OR_PAGE_SIZE = 8       # Models per page when browsing
@@ -263,7 +263,7 @@ OR_CACHE_TTL = 3600    # Cache duration in seconds
 
 ## Adding a New Provider
 
-In `src/mimobot/providers.py`, add a new entry to `AI_PROVIDERS`:
+In `src/kevlarbot/providers.py`, add a new entry to `AI_PROVIDERS`:
 
 ```python
 "my-model": {
@@ -286,7 +286,7 @@ MY_API_KEY=your_key_here
 
 ## Adding a New Persona
 
-In `src/mimobot/providers.py`, add a new entry to `PERSONAS`:
+In `src/kevlarbot/providers.py`, add a new entry to `PERSONAS`:
 
 ```python
 "my-persona": {
@@ -381,7 +381,7 @@ docker compose up -d --build
 Check the logs for errors:
 
 ```bash
-docker compose logs mimobot
+docker compose logs kevlarbot
 ```
 
 Common issues:
@@ -398,7 +398,7 @@ Kevlarbot-AI/
 ├── bot.py                  # Entry point
 ├── Dockerfile              # Docker build file
 ├── src/
-│   └── mimobot/
+│   └── kevlarbot/
 │       ├── __init__.py
 │       ├── handlers.py     # Command & callback handlers
 │       ├── ai_client.py    # AI provider client
@@ -410,7 +410,7 @@ Kevlarbot-AI/
 │   ├── README.md
 │   └── setup.md
 ├── config.env              # Environment variables (git-ignored)
-├── mimo_bot.db             # SQLite database (git-ignored)
+├── kevlarbot.db             # SQLite database (git-ignored)
 ├── requirements.txt
 └── LICENSE
 ```

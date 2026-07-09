@@ -6,7 +6,7 @@ __pycache__/
 config.env
 
 # Database file
-mimo_bot.db
+kevlarbot.db
 
 # Log files
 *.log

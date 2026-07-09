@@ -1,1 +1,1 @@
-"""MiMoBot AI package."""
+"""KevlarBot AI package."""

@@ -8,11 +8,11 @@ from telegram.constants import ParseMode
 from telegram.ext import Application, MessageHandler, CommandHandler, CallbackQueryHandler, InlineQueryHandler, filters, ContextTypes
 from telegram.error import BadRequest
 
-from mimobot.config import TELEGRAM_TOKEN, ADMIN_IDS, OR_PAGE_SIZE, logger
-from mimobot.providers import AI_PROVIDERS, PERSONAS, DEFAULT_PERSONA, BROWSE_GROUPS, ANTHROPIC_GROUPS
-from mimobot.database import MimoDB
-from mimobot.ai_client import AIClient, AuthError, RateLimitError
-from mimobot.utils import safe_delete, send_reply, make_bar
+from kevlarbot.config import TELEGRAM_TOKEN, ADMIN_IDS, OR_PAGE_SIZE, logger
+from kevlarbot.providers import AI_PROVIDERS, PERSONAS, DEFAULT_PERSONA, BROWSE_GROUPS, ANTHROPIC_GROUPS
+from kevlarbot.database import MimoDB
+from kevlarbot.ai_client import AIClient, AuthError, RateLimitError
+from kevlarbot.utils import safe_delete, send_reply, make_bar
 
 
 class MimoAIBot:
@@ -814,7 +814,7 @@ class MimoAIBot:
     async def post_init(self, application: Application) -> None:
         await self.db.connect()
         self._validate_config()
-        logger.info("MiMo Bot initialized.")
+        logger.info("KevlarBot AI initialized.")
 
     async def post_shutdown(self, application: Application) -> None:
         await self.db.close()

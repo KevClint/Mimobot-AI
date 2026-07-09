@@ -98,7 +98,7 @@ docker compose up -d --build
 ├── bot.py                  # Entry point
 ├── Dockerfile              # Docker build file
 ├── src/
-│   └── mimobot/
+│   └── kevlarbot/
 │       ├── __init__.py
 │       ├── handlers.py     # Command & callback handlers
 │       ├── ai_client.py    # AI provider client
@@ -110,7 +110,7 @@ docker compose up -d --build
 │   ├── README.md
 │   └── setup.md
 ├── config.env              # Environment variables (git-ignored)
-├── mimo_bot.db             # SQLite database (git-ignored)
+├── kevlarbot.db             # SQLite database (git-ignored)
 ├── requirements.txt
 └── LICENSE
 ```
