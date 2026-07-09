@@ -1,4 +1,3 @@
-import os
 import time
 import asyncio
 
@@ -7,10 +6,19 @@ from telegram.constants import ParseMode
 from telegram.ext import ContextTypes
 from telegram.error import BadRequest
 
-from kevlarbot.providers import PERSONAS, DEFAULT_PERSONA
-from kevlarbot.ai_client import AuthError, RateLimitError
+from kevlarbot.providers import DEFAULT_PERSONA
+from kevlarbot.ai_client import AuthError
 from kevlarbot.utils import safe_delete, send_reply
-from kevlarbot.config import logger
+
+WELCOME_TEXT = (
+    "*Hi, I am your AI Assistant.*\n\n"
+    "Free and BYOK (Bring Your Own Key) models are available.\n\n"
+    "Quick start:\n"
+    "/model - choose your AI engine\n"
+    "/persona - change how I behave\n"
+    "/session - view your current session\n"
+    "/help - full command list"
+)
 
 
 class ChatHandlers:
@@ -26,20 +34,9 @@ class ChatHandlers:
 
         if self.is_admin(chat_id):
             if not exists:
-                await self.db.save_user_data(chat_id, [], "mimo", {}, DEFAULT_PERSONA, username, display_name)
                 await self.db.set_user_allowed(chat_id, True)
-            else:
-                await self.db.save_user_data(chat_id, [], "mimo", {}, DEFAULT_PERSONA, username, display_name)
-            await update.message.reply_text(
-                "*Hi, I am your AI Assistant.*\n\n"
-                "Free and BYOK (Bring Your Own Key) models are available.\n\n"
-                "Quick start:\n"
-                "/model - choose your AI engine\n"
-                "/persona - change how I behave\n"
-                "/session - view your current session\n"
-                "/help - full command list",
-                parse_mode=ParseMode.MARKDOWN,
-            )
+            await self.db.save_user_data(chat_id, [], "mimo", {}, DEFAULT_PERSONA, username, display_name)
+            await update.message.reply_text(WELCOME_TEXT, parse_mode=ParseMode.MARKDOWN)
             return
 
         if not exists:
@@ -53,16 +50,7 @@ class ChatHandlers:
 
         history, model, keys, persona = await self.db.get_user_data(chat_id)
         await self.db.save_user_data(chat_id, history, model, keys, persona, username, display_name)
-        await update.message.reply_text(
-            "*Hi, I am your AI Assistant.*\n\n"
-            "Free and BYOK (Bring Your Own Key) models are available.\n\n"
-            "Quick start:\n"
-            "/model - choose your AI engine\n"
-            "/persona - change how I behave\n"
-            "/session - view your current session\n"
-            "/help - full command list",
-            parse_mode=ParseMode.MARKDOWN,
-        )
+        await update.message.reply_text(WELCOME_TEXT, parse_mode=ParseMode.MARKDOWN)
 
     async def new_session(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         chat_id = update.message.chat.id
@@ -151,62 +139,26 @@ class ChatHandlers:
             await update.message.reply_text(f"Daily limit of {self.daily_limit} messages reached. Try again tomorrow.")
             return
 
-        history, active_model, custom_keys, persona = await self.db.get_user_data(chat_id)
-        persona_data = PERSONAS.get(persona, PERSONAS[DEFAULT_PERSONA])
-        system_prompt = persona_data["prompt"]
-
         self._last_user_msg[chat_id] = user_text
-        history.append({"role": "user", "content": user_text})
-        if len(history) > self.max_history * 2:
-            history[:] = history[-(self.max_history * 2):]
 
-        messages = [{"role": "system", "content": system_prompt}] + history
         typing_task = asyncio.create_task(self._keep_typing(chat_id, context))
         cancel_event = asyncio.Event()
         self._cancel_flags[chat_id] = cancel_event
 
-        providers = self.ai.get_fallback_chain(active_model, custom_keys)
-        reply = None
-
-        for provider in providers:
-            if cancel_event.is_set():
-                reply = "Request cancelled."
-                break
-            if provider["is_free"]:
-                api_key = os.getenv(provider["env_key"])
-            else:
-                group_name = provider.get("group", active_model)
-                key_data = custom_keys.get(group_name)
-                if isinstance(key_data, dict) and key_data.get("custom"):
-                    api_key = key_data["api_key"]
-                else:
-                    api_key = key_data
-                if not api_key:
-                    continue
-
-            try:
-                reply = await self.ai.chat(provider, messages, api_key, system_prompt)
-                history.append({"role": "assistant", "content": reply})
-                await self.db.save_user_data(chat_id, history, active_model, custom_keys, persona)
-                break
-            except AuthError as e:
-                reply = f"Authentication error: your saved key for `{e.group}` is invalid or expired.\nUpdate it: `/setkey {e.group} <new_key>`"
-                history.pop()
-                break
-            except RateLimitError:
-                logger.warning(f"Rate limited by {provider.get('name', 'unknown')}, trying fallback...")
-                continue
-            except Exception as e:
-                logger.error(f"API Error with {provider['name']}: {e}")
-                continue
+        try:
+            reply = await self._run_ai_chat(chat_id, user_text, cancel_event=cancel_event)
+        except AuthError as e:
+            reply = (
+                f"Authentication error: your saved key for `{e.group}` is invalid or expired.\n"
+                f"Update it: `/setkey {e.group} <new_key>`"
+            )
+        finally:
+            self._cancel_flags.pop(chat_id, None)
+            typing_task.cancel()
 
         if reply is None:
             reply = "All providers are currently unavailable. Please try again later."
-            if history and history[-1]["role"] == "user":
-                history.pop()
 
-        self._cancel_flags.pop(chat_id, None)
-        typing_task.cancel()
         await send_reply(update, reply)
 
     async def inline_query_handler(self, update: Update, context: ContextTypes.DEFAULT_TYPE):

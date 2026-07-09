@@ -17,6 +17,9 @@ build/
 .env
 config.env
 
+# Secrets (Docker secrets)
+secrets/
+
 # Database
 *.db
 

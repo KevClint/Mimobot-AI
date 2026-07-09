@@ -21,8 +21,30 @@
 - Encrypted API keys (Fernet)
 - Rate limiting (2s cooldown, 100 msgs/day)
 - Admin tools: broadcast & stats
+- Docker secrets for secure API key management
 
 ## Quick Start
+
+### Docker (Recommended)
+
+```bash
+git clone https://github.com/KevClint/Kevlarbot-AI.git
+cd Kevlarbot-AI
+
+# Create secrets directory and add your keys
+mkdir -p secrets
+echo "YOUR_TELEGRAM_TOKEN" > secrets/telegram_token
+echo "YOUR_MIMO_API_KEY" > secrets/mimo_api_key
+echo "YOUR_GROQ_API_KEY" > secrets/groq_api_key
+echo "YOUR_HF_API_KEY" > secrets/hf_api_key
+echo "YOUR_ADMIN_ID" > secrets/admin_ids
+echo "YOUR_ENCRYPTION_KEY" > secrets/encryption_key
+
+# Run from the parent directory (D:\Docker)
+docker compose up -d --build
+```
+
+### Local Development
 
 ```bash
 git clone https://github.com/KevClint/Kevlarbot-AI.git
@@ -30,31 +52,35 @@ cd Kevlarbot-AI
 python -m venv venv
 .\venv\Scripts\Activate.ps1
 pip install -e .
-copy .env.example config.env
 python bot.py
-```
-
-### Docker
-
-```bash
-git clone https://github.com/KevClint/Kevlarbot-AI.git
-cd Kevlarbot-AI
-copy .env.example config.env
-# Edit config.env with your keys, then:
-docker compose up -d --build
 ```
 
 > **New?** Follow the full [Setup Guide](docs/setup.md) for detailed installation, configuration, and troubleshooting instructions.
 
-## Environment Variables
+## Docker Secrets
 
-| Variable | Required | Description |
-|----------|----------|-------------|
-| `TELEGRAM_TOKEN` | Yes | Bot token from @BotFather |
-| `ADMIN_IDS` | No | Comma-separated Telegram user IDs |
-| `GROQ_API_KEY` | No | For Llama, GPT-OSS models |
-| `HF_API_KEY` | No | For Gemma, Qwen, Mistral models |
-| `MIMO_API_KEY` | No | For MiMo V2.5 model |
+API keys are stored as Docker secrets (individual files in `secrets/`), not in a single config file.
+
+### Secret Files
+
+| File | Description |
+|------|-------------|
+| `secrets/telegram_token` | Bot token from @BotFather |
+| `secrets/mimo_api_key` | MiMo V2.5 API key |
+| `secrets/groq_api_key` | Groq API key (Llama, GPT-OSS) |
+| `secrets/hf_api_key` | HuggingFace API key (Gemma, Qwen, Mistral) |
+| `secrets/admin_ids` | Comma-separated Telegram user IDs |
+| `secrets/encryption_key` | Fernet key for encrypting user-stored keys |
+
+### Changing a Key
+
+```powershell
+# Edit the secret file
+notepad D:\Docker\kevlarbot\secrets\groq_api_key
+
+# Restart the container
+docker compose restart kevlarbot
+```
 
 ## Commands
 
@@ -97,11 +123,18 @@ docker compose up -d --build
 ## Project Structure
 
 ```
+kevlarbot/
 ├── bot.py                  # Entry point
 ├── pyproject.toml          # Build config & dependencies
-├── docker-compose.yml      # Docker Compose service
 ├── Dockerfile
-├── .env.example            # Environment template
+├── docker-entrypoint.sh    # Reads Docker secrets, exports env vars
+├── secrets/                # Docker secrets (gitignored)
+│   ├── telegram_token
+│   ├── mimo_api_key
+│   ├── groq_api_key
+│   ├── hf_api_key
+│   ├── admin_ids
+│   └── encryption_key
 ├── src/
 │   └── kevlarbot/
 │       ├── __init__.py
@@ -121,7 +154,6 @@ docker compose up -d --build
 ├── tests/
 ├── docs/
 │   └── setup.md
-├── requirements.txt
 └── LICENSE
 ```
 

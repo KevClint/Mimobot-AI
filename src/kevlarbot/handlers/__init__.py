@@ -1,8 +1,8 @@
 from kevlarbot.config import TELEGRAM_TOKEN, logger
-from kevlarbot.database import MimoDB
-from kevlarbot.ai_client import AIClient
+from kevlarbot.database import KevlarDB as KevlarDB
+from kevlarbot.ai_client import AIClient as AIClient
 
-from kevlarbot.handlers.base import MimoAIBotBase
+from kevlarbot.handlers.base import KevlarBotBase
 from kevlarbot.handlers.admin import AdminHandlers, WAITING_BROADCAST, WAITING_ADD_USER, WAITING_REMOVE_USER
 from kevlarbot.handlers.chat import ChatHandlers
 from kevlarbot.handlers.models import ModelHandlers
@@ -11,17 +11,17 @@ from kevlarbot.handlers.help import HelpHandlers
 
 from telegram.ext import (
     Application, MessageHandler, CommandHandler, CallbackQueryHandler,
-    InlineQueryHandler, filters, ContextTypes, ConversationHandler,
+    InlineQueryHandler, filters, ConversationHandler,
 )
 
 
-class MimoAIBot(
+class KevlarBot(
     HelpHandlers,
     SettingsHandlers,
     ModelHandlers,
     ChatHandlers,
     AdminHandlers,
-    MimoAIBotBase,
+    KevlarBotBase,
 ):
     """KevlarBot AI — multi-provider Telegram chatbot assembled from handler mixins."""
 
@@ -36,7 +36,7 @@ class MimoAIBot(
 
 
 def main():
-    bot = MimoAIBot()
+    bot = KevlarBot()
     app = (
         Application.builder()
         .token(TELEGRAM_TOKEN)

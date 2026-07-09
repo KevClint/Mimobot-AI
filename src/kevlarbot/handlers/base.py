@@ -1,32 +1,28 @@
 import os
 import time
 import asyncio
-from typing import Dict, Tuple, Any, Optional, List
+from typing import Dict, Tuple, Optional, List
 
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.constants import ParseMode, ChatAction
+from telegram.constants import ParseMode
 from telegram.ext import ContextTypes
 from telegram.error import BadRequest
 
-from kevlarbot.config import (
-    TELEGRAM_TOKEN, ADMIN_IDS, OR_PAGE_SIZE, OR_CACHE_TTL, TELEGRAM_MSG_LIMIT, logger,
-)
-from kevlarbot.providers import (
-    AI_PROVIDERS, PERSONAS, DEFAULT_PERSONA, BROWSE_GROUPS, ANTHROPIC_GROUPS,
-)
-from kevlarbot.database import MimoDB
+from kevlarbot.config import TELEGRAM_TOKEN, ADMIN_IDS, logger
+from kevlarbot.providers import AI_PROVIDERS, PERSONAS, DEFAULT_PERSONA
+from kevlarbot.database import KevlarDB
 from kevlarbot.ai_client import AIClient, AuthError, RateLimitError
-from kevlarbot.utils import safe_delete, send_reply, make_bar
+from kevlarbot.utils import make_bar
 
 
-class MimoAIBotBase:
+class KevlarBotBase:
     """Shared state, helpers, and utility methods for all handler mixins."""
 
     def __init__(self):
         self.max_history = 15
         self.min_interval = 2.0
         self.daily_limit = 100
-        self.db = MimoDB()
+        self.db = KevlarDB()
         self.ai = AIClient()
         self.last_msg_time: Dict[int, float] = {}
         self._daily_counts: Dict[int, Tuple[str, int]] = {}
@@ -51,7 +47,7 @@ class MimoAIBotBase:
         missing = []
         if not TELEGRAM_TOKEN:
             missing.append("TELEGRAM_TOKEN")
-        for key, provider in AI_PROVIDERS.items():
+        for _key, provider in AI_PROVIDERS.items():
             if provider.get("is_free") and not os.getenv(provider["env_key"]):
                 missing.append(provider["env_key"])
         if missing:
@@ -164,11 +160,12 @@ class MimoAIBotBase:
 
     # --- Shared AI chat logic ---
 
-    async def _run_ai_chat(self, chat_id: int, prompt: str) -> Optional[str]:
+    async def _run_ai_chat(
+        self, chat_id: int, prompt: str, cancel_event: Optional[asyncio.Event] = None,
+    ) -> Optional[str]:
         """Run AI chat with fallback chain. Returns reply text or None."""
         history, active_model, custom_keys, persona = await self.db.get_user_data(chat_id)
-        persona_data = PERSONAS.get(persona, PERSONAS[DEFAULT_PERSONA])
-        system_prompt = persona_data["prompt"]
+        system_prompt = self._get_persona_prompt(persona)
 
         history.append({"role": "user", "content": prompt})
         if len(history) > self.max_history * 2:
@@ -179,6 +176,9 @@ class MimoAIBotBase:
         reply = None
 
         for provider in providers:
+            if cancel_event and cancel_event.is_set():
+                reply = "Request cancelled."
+                break
             if provider["is_free"]:
                 api_key = os.getenv(provider["env_key"])
             else:
@@ -195,9 +195,13 @@ class MimoAIBotBase:
                 history.append({"role": "assistant", "content": reply})
                 await self.db.save_user_data(chat_id, history, active_model, custom_keys, persona)
                 break
+            except AuthError:
+                raise
             except RateLimitError:
+                logger.warning(f"Rate limited by {provider.get('name', 'unknown')}, trying fallback...")
                 continue
-            except Exception:
+            except Exception as e:
+                logger.error(f"API Error with {provider['name']}: {e}")
                 continue
 
         if reply is None:
@@ -205,6 +209,16 @@ class MimoAIBotBase:
                 history.pop()
 
         return reply
+
+    # --- Persona helpers ---
+
+    @staticmethod
+    def _get_persona_prompt(persona: str) -> str:
+        return PERSONAS.get(persona, PERSONAS[DEFAULT_PERSONA])["prompt"]
+
+    @staticmethod
+    def _get_persona_label(persona: str) -> str:
+        return PERSONAS.get(persona, PERSONAS[DEFAULT_PERSONA])["label"]
 
     # --- Shared keyboard builders ---
 
@@ -217,21 +231,44 @@ class MimoAIBotBase:
 
     # --- Shared text builders ---
 
-    async def _settings_text(self, chat_id: int) -> str:
+    async def _user_info_text(self, chat_id: int, include_history: bool = False) -> str:
         history, active_model, custom_keys, persona = await self.db.get_user_data(chat_id)
         provider = self.ai.resolve_provider(active_model, custom_keys)
-        persona_label = PERSONAS.get(persona, PERSONAS[DEFAULT_PERSONA])["label"]
+        persona_label = self._get_persona_label(persona)
         used_turns = len(history) // 2
         bar = make_bar(used_turns, self.max_history)
-        keys_list = ", ".join(custom_keys.keys()) or "none"
-        return (
-            "*Settings*\n\n"
-            f"Model: `{provider['name']}`\n"
-            f"Persona: `{persona_label}`\n"
-            f"Memory: {used_turns}/{self.max_history} turns\n"
-            f"`[{bar}]`\n"
-            f"Keys: `{keys_list}`"
-        )
+
+        if not include_history:
+            keys_list = ", ".join(custom_keys.keys()) or "none"
+            return (
+                "*Settings*\n\n"
+                f"Model: `{provider['name']}`\n"
+                f"Persona: `{persona_label}`\n"
+                f"Memory: {used_turns}/{self.max_history} turns\n"
+                f"`[{bar}]`\n"
+                f"Keys: `{keys_list}`"
+            )
+
+        lines = [
+            "*Current Session*\n",
+            f"Model: {provider['name']}",
+            f"Persona: {persona_label}",
+            f"Memory: {used_turns}/{self.max_history} turns",
+            f"[{bar}]\n",
+        ]
+        if history:
+            lines.append("Recent messages:")
+            for msg in history[-6:]:
+                role = msg.get("role", "?")
+                content = (msg.get("content", "") or "")[:80].replace("\n", " ")
+                if role == "user":
+                    lines.append(f"You: {content}")
+                elif role == "assistant":
+                    lines.append(f"AI: {content}")
+        else:
+            lines.append("No messages yet.")
+        lines.append("\n/new to clear memory")
+        return "\n".join(lines)
 
     async def _admin_panel(self, chat_id: int) -> Tuple[str, InlineKeyboardMarkup]:
         count = await self.db.user_count()
@@ -252,31 +289,30 @@ class MimoAIBotBase:
         ]
         return text, InlineKeyboardMarkup(keyboard)
 
-    async def _session_text(self, chat_id: int) -> str:
-        history, active_model, custom_keys, persona = await self.db.get_user_data(chat_id)
-        provider = self.ai.resolve_provider(active_model, custom_keys)
-        persona_label = PERSONAS.get(persona, PERSONAS[DEFAULT_PERSONA])["label"]
-        used_turns = len(history) // 2
-        bar = make_bar(used_turns, self.max_history)
+    async def _admin_stats_text(self) -> str:
+        users = await self.db.get_all_users()
+        allowed_count = sum(1 for u in users if u["is_allowed"])
+        pending_count = len(users) - allowed_count
+        return (
+            "*Bot Stats*\n\n"
+            f"Total registered: `{len(users)}`\n"
+            f"Allowed: `{allowed_count}`\n"
+            f"Pending: `{pending_count}`"
+        )
 
-        lines = [
-            "*Current Session*\n",
-            f"Model: {provider['name']}",
-            f"Persona: {persona_label}",
-            f"Memory: {used_turns}/{self.max_history} turns",
-            f"[{bar}]\n",
-        ]
-        if history:
-            lines.append("Recent messages:")
-            recent = history[-6:]
-            for msg in recent:
-                role = msg.get("role", "?")
-                content = (msg.get("content", "") or "")[:80].replace("\n", " ")
-                if role == "user":
-                    lines.append(f"You: {content}")
-                elif role == "assistant":
-                    lines.append(f"AI: {content}")
-        else:
-            lines.append("No messages yet.")
-        lines.append("\n/new to clear memory")
+    def _format_user_list(self, users: list, limit: Optional[int] = None) -> str:
+        items = users[:limit] if limit else users
+        lines = [f"*All Users ({len(users)})*\n"]
+        for u in items:
+            status = "\u2705" if u["is_allowed"] else "\u274c"
+            name_parts = []
+            if u["username"]:
+                name_parts.append(f"@{u['username']}")
+            if u["display_name"]:
+                name_parts.append(f"({u['display_name']})")
+            name_parts.append(f"(ID: {u['chat_id']})")
+            lines.append(f"{status} {' '.join(name_parts)}")
+        allowed_count = sum(1 for u in users if u["is_allowed"])
+        pending_count = len(users) - allowed_count
+        lines.append(f"\n\u2705 Allowed ({allowed_count})  \u274c Pending ({pending_count})")
         return "\n".join(lines)

@@ -2,7 +2,7 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.constants import ParseMode
 from telegram.ext import ContextTypes
 
-from kevlarbot.providers import PERSONAS, DEFAULT_PERSONA
+from kevlarbot.providers import PERSONAS
 from kevlarbot.utils import send_reply, make_bar
 
 
@@ -13,7 +13,7 @@ class SettingsHandlers:
         chat_id = update.message.chat.id
         history, active_model, custom_keys, persona = await self.db.get_user_data(chat_id)
         provider = self.ai.resolve_provider(active_model, custom_keys)
-        persona_label = PERSONAS.get(persona, PERSONAS[DEFAULT_PERSONA])["label"]
+        persona_label = self._get_persona_label(persona)
         used_turns = len(history) // 2
         bar = make_bar(used_turns, self.max_history)
         keys_set = ", ".join(k for k in custom_keys) or "none"
@@ -31,7 +31,7 @@ class SettingsHandlers:
 
     async def session_cmd(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         chat_id = update.message.chat.id
-        text = await self._session_text(chat_id)
+        text = await self._user_info_text(chat_id, include_history=True)
         if len(text) > 4000:
             await send_reply(update, text)
         else:
@@ -58,14 +58,14 @@ class SettingsHandlers:
         if key in PERSONAS:
             history, active_model, custom_keys, _ = await self.db.get_user_data(chat_id)
             await self.db.save_user_data(chat_id, history, active_model, custom_keys, key)
-            await query.edit_message_text(f"Persona set to: *{PERSONAS[key]['label']}*", parse_mode=ParseMode.MARKDOWN)
+            await query.edit_message_text(f"Persona set to: *{self._get_persona_label(key)}*", parse_mode=ParseMode.MARKDOWN)
 
     async def settings_cmd(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not await self._access_guard(update):
             return
 
         chat_id = update.message.chat.id
-        text = await self._settings_text(chat_id)
+        text = await self._user_info_text(chat_id)
         keyboard = [
             [InlineKeyboardButton("Model", callback_data="settings_model"),
              InlineKeyboardButton("Persona", callback_data="settings_persona")],
@@ -88,7 +88,7 @@ class SettingsHandlers:
         back_kb = InlineKeyboardMarkup([[InlineKeyboardButton("Back", callback_data="settings_root")]])
 
         if section == "root":
-            text = await self._settings_text(chat_id)
+            text = await self._user_info_text(chat_id)
             keyboard = [
                 [InlineKeyboardButton("Model", callback_data="settings_model"),
                  InlineKeyboardButton("Persona", callback_data="settings_persona")],
@@ -139,6 +139,6 @@ class SettingsHandlers:
             return
 
         if section == "session":
-            text = await self._session_text(chat_id)
+            text = await self._user_info_text(chat_id, include_history=True)
             await query.edit_message_text(text, reply_markup=back_kb, parse_mode=ParseMode.MARKDOWN)
             return

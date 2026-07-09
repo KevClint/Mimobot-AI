@@ -4,11 +4,11 @@ from typing import List, Dict, Tuple, Optional, Any
 
 import aiosqlite
 
-from kevlarbot.config import get_fernet, logger
+from kevlarbot.config import get_fernet
 from kevlarbot.providers import DEFAULT_PERSONA
 
 
-class MimoDB:
+class KevlarDB:
     def __init__(self, db_name: str = "kevlarbot.db"):
         self.db_name = db_name
         self.db: Optional[aiosqlite.Connection] = None

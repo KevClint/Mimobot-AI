@@ -6,19 +6,30 @@ This page contains detailed install, configuration, and troubleshooting notes.
 
 ### Docker (Recommended)
 
-Clone the repo, configure your keys, and run with Docker:
+Clone the repo, create your secrets, and run:
 
 ```bash
 git clone https://github.com/KevClint/Kevlarbot-AI.git
 cd Kevlarbot-AI
-copy .env.example config.env
-# Edit config.env with your keys, then:
+
+# Create secrets directory
+mkdir -p secrets
+
+# Add your keys (one value per file)
+echo "YOUR_TELEGRAM_TOKEN" > secrets/telegram_token
+echo "YOUR_ADMIN_ID" > secrets/admin_ids
+echo "YOUR_ENCRYPTION_KEY" > secrets/encryption_key
+```
+
+Then run from the parent directory (`D:\Docker`):
+
+```bash
 docker compose up -d --build
 ```
 
 ### Manual
 
-Clone the repo, create a virtual environment, install dependencies, configure your keys, and run the bot.
+Clone the repo, create a virtual environment, install dependencies, and run:
 
 ```bash
 git clone https://github.com/KevClint/Kevlarbot-AI.git
@@ -26,7 +37,6 @@ cd Kevlarbot-AI
 python -m venv venv
 .\venv\Scripts\Activate.ps1   # Windows
 pip install -e .
-copy .env.example config.env
 python bot.py
 ```
 
@@ -46,9 +56,9 @@ python bot.py
 1. Open Telegram and search for **@BotFather**
 2. Send `/newbot`
 3. Enter a **name** for your bot (e.g., `KevlarBot AI`)
-4. Enter a **username** for your bot (must end in `bot`, e.g., `MiMoAI_bot`)
+4. Enter a **username** for your bot (must end in `bot`, e.g., `KevlarBot`)
 5. BotFather will give you a token like: `123456789:ABCdefGHIjklMNOpqrsTUVwxyz`
-6. Copy this token — you'll need it for `config.env`
+6. Copy this token — you'll need it for `secrets/telegram_token`
 
 ---
 
@@ -57,7 +67,7 @@ python bot.py
 1. Open Telegram and search for **@userinfobot**
 2. Send any message to it
 3. It will reply with your user ID (a number like `123456789`)
-4. Copy this number — you'll need it for `ADMIN_IDS`
+4. Copy this number — you'll need it for `secrets/admin_ids`
 
 > This gives you admin access to use `/stats` and `/broadcast` commands.
 
@@ -71,21 +81,21 @@ KevlarBot AI works out of the box with free models (only in telegram bot, if you
 
 1. Go to [huggingface.co/settings/tokens](https://huggingface.co/settings/tokens)
 2. Create a new token
-3. Copy the token for `HF_API_KEY`
+3. Copy the token for `secrets/hf_api_key`
 
 ### Groq (for Llama, GPT-OSS)
 
 1. Go to [console.groq.com](https://console.groq.com)
 2. Sign up / log in
 3. Go to **API Keys** and create one
-4. Copy the key for `GROQ_API_KEY`
+4. Copy the key for `secrets/groq_api_key`
 
 ### MiMo (for MiMo V2.5)
 
 1. Go to [api.xiaomimimo.com](https://api.xiaomimimo.com)
 2. Sign up / log in
 3. Create an API key
-4. Copy the key for `MIMO_API_KEY`
+4. Copy the key for `secrets/mimo_api_key`
 
 ### OpenRouter / DeepSeek / Claude (BYOK)
 
@@ -93,23 +103,19 @@ Users can add their own keys via the `/setkey` command in Telegram. No server-si
 
 ---
 
-## Step 4: Configure Environment
+## Step 4: Configure Secrets
 
-Copy the example config and fill in your values:
+### Docker Setup
+
+Create individual secret files in the `secrets/` directory. Each file contains **only the value** — no variable name, no comments:
 
 ```bash
-copy .env.example config.env
-```
-
-Open `config.env` and edit:
-
-```env
-TELEGRAM_TOKEN=123456789:ABCdefGHIjklMNOpqrsTUVwxyz
-ADMIN_IDS=123456789
-GROQ_API_KEY=gsk_...
-HF_API_KEY=hf_...
-MIMO_API_KEY=...
-ENCRYPTION_KEY=...
+mkdir -p secrets
+echo "123456789:ABCdefGHIjklMNOpqrsTUVwxyz" > secrets/telegram_token
+echo "123456789" > secrets/admin_ids
+echo "gsk_..." > secrets/groq_api_key
+echo "hf_..." > secrets/hf_api_key
+echo "sk-..." > secrets/mimo_api_key
 ```
 
 ### Generate Encryption Key (Optional)
@@ -120,9 +126,19 @@ If you want a persistent encryption key for API keys stored by users:
 python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
 ```
 
-Paste the output into `ENCRYPTION_KEY` in `config.env`.
+Save the output to `secrets/encryption_key`.
 
 > If you skip this, a random key is generated on each restart — existing saved API keys will stop working.
+
+### Changing Keys
+
+To update a key, edit the file and restart the container:
+
+```powershell
+notepad D:\Docker\kevlarbot\secrets\groq_api_key
+# edit value, save
+docker compose restart kevlarbot
+```
 
 ---
 
@@ -155,7 +171,8 @@ python bot.py
 You should see:
 
 ```
-Bot started polling...
+KevlarBot AI initialized.
+Application started
 ```
 
 Open Telegram, find your bot, and send `/start`.
@@ -238,7 +255,7 @@ Or run directly without activating:
 
 ### Rate Limits (in `src/kevlarbot/handlers/base.py`)
 
-Edit these values in the `MimoAIBotBase.__init__` method:
+Edit these values in the `KevlarBotBase.__init__` method:
 
 ```python
 self.max_history = 10      # Messages kept in context
@@ -276,10 +293,10 @@ In `src/kevlarbot/providers.py`, add a new entry to `AI_PROVIDERS`:
 },
 ```
 
-Then add the API key to `config.env`:
+Then create a secret file:
 
-```env
-MY_API_KEY=your_key_here
+```bash
+echo "your_key_here" > secrets/my_api_key
 ```
 
 ---
@@ -299,16 +316,16 @@ Users can then select it with `/persona` in Telegram.
 
 ---
 
-## Environment Variables
+## Docker Secrets
 
-| Variable | Required | Description |
-|----------|----------|-------------|
-| `TELEGRAM_TOKEN` | Yes | Bot token from @BotFather |
-| `ADMIN_IDS` | No | Comma-separated Telegram user IDs |
-| `ENCRYPTION_KEY` | No | Persistent key for API key encryption |
-| `GROQ_API_KEY` | No | For Llama, GPT-OSS models |
-| `HF_API_KEY` | No | For Gemma, Qwen, Mistral models |
-| `MIMO_API_KEY` | No | For MiMo V2.5 model |
+| Secret File | Required | Description |
+|-------------|----------|-------------|
+| `secrets/telegram_token` | Yes | Bot token from @BotFather |
+| `secrets/admin_ids` | No | Comma-separated Telegram user IDs |
+| `secrets/encryption_key` | No | Persistent key for API key encryption |
+| `secrets/groq_api_key` | No | For Llama, GPT-OSS models |
+| `secrets/hf_api_key` | No | For Gemma, Qwen, Mistral models |
+| `secrets/mimo_api_key` | No | For MiMo V2.5 model |
 
 ---
 
@@ -335,8 +352,8 @@ Users can then select it with `/persona` in Telegram.
 
 ### Bot doesn't respond
 
-- Check `TELEGRAM_TOKEN` is correct in `config.env`
-- Make sure `python bot.py` is running
+- Check `TELEGRAM_TOKEN` is correct in `secrets/telegram_token`
+- Make sure `python bot.py` is running (or container is up with `docker compose ps`)
 - Check if the bot was stopped with `/stop` in Telegram
 
 ### "Not authorized" on admin commands
@@ -352,7 +369,7 @@ Users can then select it with `/persona` in Telegram.
 
 ### Saved API keys stop working after restart
 
-- You need a persistent `ENCRYPTION_KEY` in `config.env`
+- You need a persistent `ENCRYPTION_KEY` in `secrets/encryption_key`
 - Generate one with: `python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"`
 
 ### Virtual environment issues (Windows)
@@ -370,7 +387,7 @@ Make sure you're in the project root directory and the virtual environment is ac
 
 ### Docker build fails
 
-Make sure Docker Desktop is running and you're in the project directory:
+Make sure Docker Desktop is running and you're in the parent directory (`D:\Docker`):
 
 ```bash
 docker compose up -d --build
@@ -385,21 +402,27 @@ docker compose logs kevlarbot
 ```
 
 Common issues:
-- Missing `config.env` file
+- Missing secret files in `secrets/` directory
 - Invalid `TELEGRAM_TOKEN`
-- Port conflicts (Kevlarbot AI doesn't use ports, so this is rare)
+- Container name conflict — ensure `container_name: kevlarbot` is in `docker-compose.yml`
 
 ---
 
 ## Project Structure
 
 ```
-Kevlarbot-AI/
+kevlarbot/
 ├── bot.py                  # Entry point
 ├── pyproject.toml          # Build config & dependencies
-├── docker-compose.yml      # Docker Compose service
 ├── Dockerfile
-├── .env.example            # Environment template
+├── docker-entrypoint.sh    # Reads Docker secrets, exports env vars
+├── secrets/                # Docker secrets (gitignored)
+│   ├── telegram_token
+│   ├── mimo_api_key
+│   ├── groq_api_key
+│   ├── hf_api_key
+│   ├── admin_ids
+│   └── encryption_key
 ├── src/
 │   └── kevlarbot/
 │       ├── __init__.py
@@ -419,7 +442,6 @@ Kevlarbot-AI/
 ├── tests/
 ├── docs/
 │   └── setup.md
-├── requirements.txt
 └── LICENSE
 ```
 
@@ -427,7 +449,8 @@ Kevlarbot-AI/
 
 ## Security Notes
 
-- Keep `config.env` out of Git — it contains your API keys
+- API keys are stored as Docker secrets in `secrets/` (gitignored)
+- Each secret is a separate file containing only the value
 - API keys stored by users are encrypted with Fernet encryption
 - The `ENCRYPTION_KEY` should be kept secret and backed up
 - Do not share your bot token publicly

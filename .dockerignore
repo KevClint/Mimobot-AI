@@ -1,0 +1,14 @@
+.git
+.gitignore
+.gitattributes
+__pycache__
+.pytest_cache
+.ruff_cache
+secrets/
+*.db
+tests/
+docs/
+*.md
+LICENSE
+.dockerignore
+Dockerfile

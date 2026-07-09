@@ -56,26 +56,7 @@ class AdminHandlers:
         if not users:
             await update.message.reply_text("No users found.")
             return
-
-        allowed_count = sum(1 for u in users if u["is_allowed"])
-        pending_count = len(users) - allowed_count
-        lines = [f"All Users ({len(users)}):\n"]
-
-        for u in users:
-            status = "\u2705" if u["is_allowed"] else "\u274c"
-            name_parts = []
-            if u["username"]:
-                name_parts.append(f"@{u['username']}")
-            if u["display_name"]:
-                name_parts.append(f"({u['display_name']})")
-            if not name_parts:
-                name_parts.append(f"(ID: {u['chat_id']})")
-            else:
-                name_parts.append(f"(ID: {u['chat_id']})")
-            lines.append(f"{status} {' '.join(name_parts)}")
-
-        lines.append(f"\n\u2705 Allowed ({allowed_count})  \u274c Pending ({pending_count})")
-        await update.message.reply_text("\n".join(lines))
+        await update.message.reply_text(self._format_user_list(users))
 
     async def admin_cmd(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not await self._admin_guard(update):
@@ -98,16 +79,7 @@ class AdminHandlers:
             return
 
         if section == "stats":
-            count = await self.db.user_count()
-            users = await self.db.get_all_users()
-            allowed_count = sum(1 for u in users if u["is_allowed"])
-            pending_count = len(users) - allowed_count
-            text = (
-                "*Bot Stats*\n\n"
-                f"Total registered: `{count}`\n"
-                f"Allowed: `{allowed_count}`\n"
-                f"Pending: `{pending_count}`"
-            )
+            text = await self._admin_stats_text()
             await query.edit_message_text(text, reply_markup=back_kb, parse_mode=ParseMode.MARKDOWN)
             return
 
@@ -116,20 +88,8 @@ class AdminHandlers:
             if not users:
                 await query.edit_message_text("No users found.", reply_markup=back_kb)
                 return
-            lines = [f"*All Users ({len(users)})*\n"]
-            for u in users[:8]:
-                status = "\u2705" if u["is_allowed"] else "\u274c"
-                name_parts = []
-                if u["username"]:
-                    name_parts.append(f"@{u['username']}")
-                if u["display_name"]:
-                    name_parts.append(f"({u['display_name']})")
-                name_parts.append(f"(ID: {u['chat_id']})")
-                lines.append(f"{status} {' '.join(name_parts)}")
-            allowed_count = sum(1 for u in users if u["is_allowed"])
-            pending_count = len(users) - allowed_count
-            lines.append(f"\n\u2705 Allowed ({allowed_count})  \u274c Pending ({pending_count})")
-            await query.edit_message_text("\n".join(lines), reply_markup=back_kb, parse_mode=ParseMode.MARKDOWN)
+            text = self._format_user_list(users, limit=8)
+            await query.edit_message_text(text, reply_markup=back_kb, parse_mode=ParseMode.MARKDOWN)
             return
 
         if section == "broadcast":
