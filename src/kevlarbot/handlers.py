@@ -5,7 +5,7 @@ from typing import Dict, Tuple, Any
 
 from telegram import Update, constants, InlineKeyboardButton, InlineKeyboardMarkup, InlineQueryResultArticle, InputTextMessageContent
 from telegram.constants import ParseMode
-from telegram.ext import Application, MessageHandler, CommandHandler, CallbackQueryHandler, InlineQueryHandler, filters, ContextTypes
+from telegram.ext import Application, MessageHandler, CommandHandler, CallbackQueryHandler, InlineQueryHandler, filters, ContextTypes, ConversationHandler
 from telegram.error import BadRequest
 
 from kevlarbot.config import TELEGRAM_TOKEN, ADMIN_IDS, OR_PAGE_SIZE, logger
@@ -14,10 +14,12 @@ from kevlarbot.database import MimoDB
 from kevlarbot.ai_client import AIClient, AuthError, RateLimitError
 from kevlarbot.utils import safe_delete, send_reply, make_bar
 
+WAITING_BROADCAST, WAITING_ADD_USER, WAITING_REMOVE_USER = range(3)
+
 
 class MimoAIBot:
     def __init__(self):
-        self.max_history = 5
+        self.max_history = 15
         self.min_interval = 2.0
         self.daily_limit = 100
         self.db = MimoDB()
@@ -151,9 +153,13 @@ class MimoAIBot:
         persona_data = PERSONAS.get(persona, PERSONAS[DEFAULT_PERSONA])
         system_prompt = persona_data["prompt"]
 
-        messages = [{"role": "system", "content": system_prompt}, {"role": "user", "content": prompt}]
+        history.append({"role": "user", "content": prompt})
+        if len(history) > self.max_history * 2:
+            history[:] = history[-(self.max_history * 2):]
 
-        providers = self.ai.get_fallback_chain(active_model)
+        messages = [{"role": "system", "content": system_prompt}] + history
+
+        providers = self.ai.get_fallback_chain(active_model, custom_keys)
         reply = None
 
         for provider in providers:
@@ -161,11 +167,17 @@ class MimoAIBot:
                 api_key = os.getenv(provider["env_key"])
             else:
                 group_name = provider.get("group", active_model)
-                api_key = custom_keys.get(group_name)
+                key_data = custom_keys.get(group_name)
+                if isinstance(key_data, dict) and key_data.get("custom"):
+                    api_key = key_data["api_key"]
+                else:
+                    api_key = key_data
                 if not api_key:
                     continue
             try:
                 reply = await self.ai.chat(provider, messages, api_key, system_prompt)
+                history.append({"role": "assistant", "content": reply})
+                await self.db.save_user_data(chat_id, history, active_model, custom_keys, persona)
                 break
             except RateLimitError:
                 continue
@@ -174,6 +186,8 @@ class MimoAIBot:
 
         if reply is None:
             reply = "AI is currently unavailable. Try again later."
+            if history and history[-1]["role"] == "user":
+                history.pop()
 
         await send_reply(update, reply)
 
@@ -201,7 +215,7 @@ class MimoAIBot:
     async def info_cmd(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         chat_id = update.message.chat.id
         history, active_model, custom_keys, persona = await self.db.get_user_data(chat_id)
-        provider = self.ai.resolve_provider(active_model)
+        provider = self.ai.resolve_provider(active_model, custom_keys)
         persona_label = PERSONAS.get(persona, PERSONAS[DEFAULT_PERSONA])["label"]
         used_turns = len(history) // 2
         bar = make_bar(used_turns, self.max_history)
@@ -221,7 +235,7 @@ class MimoAIBot:
     async def session_cmd(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         chat_id = update.message.chat.id
         history, active_model, custom_keys, persona = await self.db.get_user_data(chat_id)
-        provider = self.ai.resolve_provider(active_model)
+        provider = self.ai.resolve_provider(active_model, custom_keys)
         persona_label = PERSONAS.get(persona, PERSONAS[DEFAULT_PERSONA])["label"]
         used_turns = len(history) // 2
         bar = make_bar(used_turns, self.max_history)
@@ -305,38 +319,42 @@ class MimoAIBot:
         if section == "commands":
             text = (
                 "*Commands*\n"
-                "/chat <message> - chat with AI (standalone, no memory)\n"
+                "/chat <message> - chat with AI (with memory)\n"
                 "/new - clear memory, keep keys and model\n"
                 "/retry - regenerate the last response\n"
                 "/cancel - cancel an in-progress request\n"
-                "/model - switch AI engine or browse OpenRouter/DeepSeek/Claude models\n"
+                "/settings - view and change your settings\n"
+                "/model - switch AI engine or browse models\n"
                 "/persona - change assistant behavior\n"
-                "/info - view your dashboard\n"
-                "/session - view current session (model, persona, memory)\n"
-                "/setkey <provider> <key> - save a BYOK key (openrouter, deepseek, claude)\n"
+                "/setkey <provider> <key> - save a BYOK key\n"
+                "/setkey <name> <base\\_url> <key> - add custom endpoint\n"
                 "/help - this menu\n\n"
                 "*Admin Commands*\n"
+                "/admin - admin panel (interactive)\n"
                 "/adduser @username - whitelist a user\n"
                 "/removeuser @username - revoke access\n"
-                "/listusers - show all users\n"
-                "/stats - bot statistics\n"
                 "/broadcast <message> - send to all users"
             )
         elif section == "keys":
             text = (
                 "*Getting API Keys*\n"
-                "OpenRouter: create a key at openrouter.ai/keys, unlocks browsing all its hosted models.\n"
-                "DeepSeek: create a key at platform.deepseek.com under API Keys.\n"
-                "Claude: create a key at console.anthropic.com under API Keys.\n\n"
-                "Then run: `/setkey <provider> <your_key>`\n"
-                "Your key is verified before saving and used only for your own requests."
+                "OpenRouter: create a key at openrouter.ai/keys\n"
+                "DeepSeek: create a key at platform.deepseek.com\n"
+                "Claude: create a key at console.anthropic.com\n"
+                "Groq: create a key at console.groq.com\n\n"
+                "Standard: /setkey <provider> <your\\_key>\n"
+                "Custom: /setkey <name> <base\\_url> <your\\_key>\n"
+                "Your key is verified before saving."
             )
         elif section == "admin":
             text = "*Contact Admin*\nMessage the bot owner directly for support or bug reports."
         else:
             text = "Unknown section."
 
-        await query.edit_message_text(text, reply_markup=back_kb, parse_mode=ParseMode.MARKDOWN)
+        try:
+            await query.edit_message_text(text, reply_markup=back_kb, parse_mode=ParseMode.MARKDOWN)
+        except BadRequest:
+            await query.edit_message_text(text, reply_markup=back_kb)
 
     # --- ADMIN ---
     async def stats_cmd(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -509,6 +527,400 @@ class MimoAIBot:
         lines.append(f"\n✅ Allowed ({allowed_count})  ❌ Pending ({pending_count})")
         await update.message.reply_text("\n".join(lines))
 
+    # --- ADMIN PANEL ---
+    async def admin_cmd(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        chat_id = update.message.chat.id
+        if not self.is_admin(chat_id):
+            await update.message.reply_text("Not authorized.")
+            return
+        count = await self.db.user_count()
+        users = await self.db.get_all_users()
+        allowed_count = sum(1 for u in users if u["is_allowed"])
+        pending_count = len(users) - allowed_count
+
+        text = (
+            "*Admin Panel*\n\n"
+            f"Registered users: `{count}`\n"
+            f"Allowed: `{allowed_count}` | Pending: `{pending_count}`"
+        )
+        keyboard = [
+            [InlineKeyboardButton("Stats", callback_data="admin_stats"),
+             InlineKeyboardButton("Users", callback_data="admin_users")],
+            [InlineKeyboardButton("Broadcast", callback_data="admin_broadcast"),
+             InlineKeyboardButton("Add User", callback_data="admin_adduser")],
+            [InlineKeyboardButton("Remove User", callback_data="admin_removeuser")],
+        ]
+        await update.message.reply_text(
+            text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.MARKDOWN
+        )
+
+    async def admin_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        query = update.callback_query
+        await query.answer()
+        chat_id = query.message.chat.id
+        if not self.is_admin(chat_id):
+            await query.edit_message_text("Not authorized.")
+            return
+
+        section = query.data.split("_", 1)[1]
+        back_kb = InlineKeyboardMarkup([[InlineKeyboardButton("Back", callback_data="admin_root")]])
+
+        if section == "root":
+            count = await self.db.user_count()
+            users = await self.db.get_all_users()
+            allowed_count = sum(1 for u in users if u["is_allowed"])
+            pending_count = len(users) - allowed_count
+            text = (
+                "*Admin Panel*\n\n"
+                f"Registered users: `{count}`\n"
+                f"Allowed: `{allowed_count}` | Pending: `{pending_count}`"
+            )
+            keyboard = [
+                [InlineKeyboardButton("Stats", callback_data="admin_stats"),
+                 InlineKeyboardButton("Users", callback_data="admin_users")],
+                [InlineKeyboardButton("Broadcast", callback_data="admin_broadcast"),
+                 InlineKeyboardButton("Add User", callback_data="admin_adduser")],
+                [InlineKeyboardButton("Remove User", callback_data="admin_removeuser")],
+            ]
+            await query.edit_message_text(
+                text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.MARKDOWN
+            )
+            return
+
+        if section == "stats":
+            count = await self.db.user_count()
+            users = await self.db.get_all_users()
+            allowed_count = sum(1 for u in users if u["is_allowed"])
+            pending_count = len(users) - allowed_count
+            text = (
+                "*Bot Stats*\n\n"
+                f"Total registered: `{count}`\n"
+                f"Allowed: `{allowed_count}`\n"
+                f"Pending: `{pending_count}`"
+            )
+            await query.edit_message_text(text, reply_markup=back_kb, parse_mode=ParseMode.MARKDOWN)
+            return
+
+        if section == "users":
+            users = await self.db.get_all_users()
+            if not users:
+                await query.edit_message_text("No users found.", reply_markup=back_kb)
+                return
+            lines = [f"*All Users ({len(users)})*\n"]
+            for u in users[:8]:
+                status = "✅" if u["is_allowed"] else "❌"
+                name_parts = []
+                if u["username"]:
+                    name_parts.append(f"@{u['username']}")
+                if u["display_name"]:
+                    name_parts.append(f"({u['display_name']})")
+                name_parts.append(f"(ID: {u['chat_id']})")
+                lines.append(f"{status} {' '.join(name_parts)}")
+            allowed_count = sum(1 for u in users if u["is_allowed"])
+            pending_count = len(users) - allowed_count
+            lines.append(f"\n✅ Allowed ({allowed_count})  ❌ Pending ({pending_count})")
+            await query.edit_message_text("\n".join(lines), reply_markup=back_kb, parse_mode=ParseMode.MARKDOWN)
+            return
+
+        if section == "broadcast":
+            await query.edit_message_text(
+                "Type your broadcast message:", reply_markup=back_kb
+            )
+            return
+
+        if section == "adduser":
+            await query.edit_message_text(
+                "Send me the username (e.g. @johndoe) or chat ID:",
+                reply_markup=back_kb
+            )
+            return
+
+        if section == "removeuser":
+            await query.edit_message_text(
+                "Send me the username (e.g. @johndoe) or chat ID:",
+                reply_markup=back_kb
+            )
+            return
+
+    # --- ADMIN CONVERSATION HANDLERS ---
+    async def admin_broadcast_conv(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        query = update.callback_query
+        await query.answer()
+        chat_id = query.message.chat.id
+        if not self.is_admin(chat_id):
+            await query.edit_message_text("Not authorized.")
+            return ConversationHandler.END
+        await query.edit_message_text("Type your broadcast message:")
+        return WAITING_BROADCAST
+
+    async def receive_broadcast(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        chat_id = update.message.chat.id
+        if not self.is_admin(chat_id):
+            await update.message.reply_text("Not authorized.")
+            return ConversationHandler.END
+
+        text = update.message.text
+        ids = await self.db.all_chat_ids()
+        status = await update.message.reply_text(f"Sending to {len(ids)} users...")
+
+        sem = asyncio.Semaphore(20)
+        sent, failed = 0, 0
+
+        async def send_one(uid):
+            nonlocal sent, failed
+            async with sem:
+                try:
+                    await context.bot.send_message(uid, text, parse_mode=ParseMode.MARKDOWN)
+                    sent += 1
+                except BadRequest:
+                    failed += 1
+                except Exception as e:
+                    if "RetryAfter" in type(e).__name__:
+                        await asyncio.sleep(e.retry_after + 1)
+                        try:
+                            await context.bot.send_message(uid, text, parse_mode=ParseMode.MARKDOWN)
+                            sent += 1
+                        except Exception:
+                            failed += 1
+                    else:
+                        failed += 1
+
+        await asyncio.gather(*(send_one(uid) for uid in ids), return_exceptions=True)
+        await status.edit_text(f"Broadcast done. Sent: {sent}, Failed: {failed}")
+        return ConversationHandler.END
+
+    async def admin_adduser_conv(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        query = update.callback_query
+        await query.answer()
+        chat_id = query.message.chat.id
+        if not self.is_admin(chat_id):
+            await query.edit_message_text("Not authorized.")
+            return ConversationHandler.END
+        await query.edit_message_text("Send me the username (e.g. @johndoe) or chat ID:")
+        return WAITING_ADD_USER
+
+    async def receive_adduser_input(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        chat_id = update.message.chat.id
+        if not self.is_admin(chat_id):
+            await update.message.reply_text("Not authorized.")
+            return ConversationHandler.END
+
+        arg = update.message.text.strip()
+        target_id = None
+        target_label = None
+
+        if arg.lstrip("-").isdigit():
+            target_id = int(arg)
+            if not await self.db.get_user_by_id(target_id):
+                await update.message.reply_text(
+                    f"ID `{target_id}` not found. They need to message the bot first.",
+                    parse_mode=ParseMode.MARKDOWN
+                )
+                return ConversationHandler.END
+        else:
+            clean = arg.lstrip("@").lower()
+            target_id = await self.db.get_user_by_username(clean)
+            target_label = clean
+            if not target_id:
+                await update.message.reply_text(
+                    f"User `{arg}` not found. They need to message the bot first.",
+                    parse_mode=ParseMode.MARKDOWN
+                )
+                return ConversationHandler.END
+
+        await self.db.set_user_allowed(target_id, True)
+        label = f"@{target_label}" if target_label else str(target_id)
+        await update.message.reply_text(f"User {label} has been whitelisted.")
+        return ConversationHandler.END
+
+    async def admin_removeuser_conv(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        query = update.callback_query
+        await query.answer()
+        chat_id = query.message.chat.id
+        if not self.is_admin(chat_id):
+            await query.edit_message_text("Not authorized.")
+            return ConversationHandler.END
+        await query.edit_message_text("Send me the username (e.g. @johndoe) or chat ID:")
+        return WAITING_REMOVE_USER
+
+    async def receive_removeuser_input(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        chat_id = update.message.chat.id
+        if not self.is_admin(chat_id):
+            await update.message.reply_text("Not authorized.")
+            return ConversationHandler.END
+
+        arg = update.message.text.strip()
+        target_id = None
+        target_label = None
+
+        if arg.lstrip("-").isdigit():
+            target_id = int(arg)
+            if not await self.db.get_user_by_id(target_id):
+                await update.message.reply_text(
+                    f"ID `{target_id}` not found.",
+                    parse_mode=ParseMode.MARKDOWN
+                )
+                return ConversationHandler.END
+        else:
+            clean = arg.lstrip("@").lower()
+            target_id = await self.db.get_user_by_username(clean)
+            target_label = clean
+            if not target_id:
+                await update.message.reply_text(
+                    f"User `{arg}` not found.",
+                    parse_mode=ParseMode.MARKDOWN
+                )
+                return ConversationHandler.END
+
+        await self.db.set_user_allowed(target_id, False)
+        label = f"@{target_label}" if target_label else str(target_id)
+        await update.message.reply_text(f"User {label} has been removed.")
+        return ConversationHandler.END
+
+    async def cancel_conv(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        await update.message.reply_text("Cancelled.")
+        return ConversationHandler.END
+
+    # --- SETTINGS ---
+    async def settings_cmd(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        chat_id = update.message.chat.id
+        if not self.is_admin(chat_id) and not await self.db.is_user_allowed(chat_id):
+            await update.message.reply_text("Access denied. Contact an admin to get access.")
+            return
+
+        history, active_model, custom_keys, persona = await self.db.get_user_data(chat_id)
+        provider = self.ai.resolve_provider(active_model, custom_keys)
+        persona_label = PERSONAS.get(persona, PERSONAS[DEFAULT_PERSONA])["label"]
+        used_turns = len(history) // 2
+        bar = make_bar(used_turns, self.max_history)
+        keys_list = ", ".join(custom_keys.keys()) or "none"
+
+        text = (
+            "*Settings*\n\n"
+            f"Model: `{provider['name']}`\n"
+            f"Persona: `{persona_label}`\n"
+            f"Memory: {used_turns}/{self.max_history} turns\n"
+            f"`[{bar}]`\n"
+            f"Keys: `{keys_list}`"
+        )
+        keyboard = [
+            [InlineKeyboardButton("Model", callback_data="settings_model"),
+             InlineKeyboardButton("Persona", callback_data="settings_persona")],
+            [InlineKeyboardButton("Keys", callback_data="settings_keys"),
+             InlineKeyboardButton("Session", callback_data="settings_session")],
+            [InlineKeyboardButton("Help", callback_data="help_root")],
+        ]
+        await update.message.reply_text(
+            text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.MARKDOWN
+        )
+
+    async def settings_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        query = update.callback_query
+        await query.answer()
+        chat_id = query.message.chat.id
+        if not self.is_admin(chat_id) and not await self.db.is_user_allowed(chat_id):
+            await query.edit_message_text("Access denied.")
+            return
+
+        section = query.data.split("_", 1)[1]
+        back_kb = InlineKeyboardMarkup([[InlineKeyboardButton("Back", callback_data="settings_root")]])
+
+        if section == "root":
+            history, active_model, custom_keys, persona = await self.db.get_user_data(chat_id)
+            provider = self.ai.resolve_provider(active_model, custom_keys)
+            persona_label = PERSONAS.get(persona, PERSONAS[DEFAULT_PERSONA])["label"]
+            used_turns = len(history) // 2
+            bar = make_bar(used_turns, self.max_history)
+            keys_list = ", ".join(custom_keys.keys()) or "none"
+            text = (
+                "*Settings*\n\n"
+                f"Model: `{provider['name']}`\n"
+                f"Persona: `{persona_label}`\n"
+                f"Memory: {used_turns}/{self.max_history} turns\n"
+                f"`[{bar}]`\n"
+                f"Keys: `{keys_list}`"
+            )
+            keyboard = [
+                [InlineKeyboardButton("Model", callback_data="settings_model"),
+                 InlineKeyboardButton("Persona", callback_data="settings_persona")],
+                [InlineKeyboardButton("Keys", callback_data="settings_keys"),
+                 InlineKeyboardButton("Session", callback_data="settings_session")],
+                [InlineKeyboardButton("Help", callback_data="help_root")],
+            ]
+            await query.edit_message_text(
+                text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.MARKDOWN
+            )
+            return
+
+        if section == "model":
+            _, _, custom_keys, _ = await self.db.get_user_data(chat_id)
+            keyboard = [
+                [InlineKeyboardButton("🆓 Free Models", callback_data="modelcat_free")],
+                [InlineKeyboardButton("🔑 BYOK Providers", callback_data="modelcat_byok")],
+                [InlineKeyboardButton("⚙️ Custom Endpoints", callback_data="modelcat_custom")],
+            ]
+            keyboard.append([InlineKeyboardButton("Back", callback_data="settings_root")])
+            await query.edit_message_text(
+                "*Select your preferred AI Model:*", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.MARKDOWN
+            )
+            return
+
+        if section == "persona":
+            _, _, _, current = await self.db.get_user_data(chat_id)
+            keyboard = []
+            for key, p in PERSONAS.items():
+                prefix = "> " if key == current else ""
+                keyboard.append([InlineKeyboardButton(f"{prefix}{p['label']}", callback_data=f"setpersona_{key}")])
+            keyboard.append([InlineKeyboardButton("Back", callback_data="settings_root")])
+            await query.edit_message_text(
+                "*Choose a persona:*", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.MARKDOWN
+            )
+            return
+
+        if section == "keys":
+            _, _, custom_keys, _ = await self.db.get_user_data(chat_id)
+            keys_list = "\n".join(f"• `{k}`" for k in custom_keys) if custom_keys else "No keys saved."
+            text = (
+                "*API Keys*\n\n"
+                f"{keys_list}\n\n"
+                "To add/update a key:\n"
+                "`/setkey <provider> <key>`\n"
+                "`/setkey <name> <base_url> <key>` (custom endpoint)"
+            )
+            await query.edit_message_text(text, reply_markup=back_kb, parse_mode=ParseMode.MARKDOWN)
+            return
+
+        if section == "session":
+            history, active_model, custom_keys, persona = await self.db.get_user_data(chat_id)
+            provider = self.ai.resolve_provider(active_model, custom_keys)
+            persona_label = PERSONAS.get(persona, PERSONAS[DEFAULT_PERSONA])["label"]
+            used_turns = len(history) // 2
+            bar = make_bar(used_turns, self.max_history)
+
+            lines = [
+                "*Current Session*\n",
+                f"Model: {provider['name']}",
+                f"Persona: {persona_label}",
+                f"Memory: {used_turns}/{self.max_history} turns",
+                f"[{bar}]\n",
+            ]
+            if history:
+                lines.append("Recent messages:")
+                recent = history[-6:]
+                for msg in recent:
+                    role = msg.get("role", "?")
+                    content = (msg.get("content", "") or "")[:80].replace("\n", " ")
+                    if role == "user":
+                        lines.append(f"You: {content}")
+                    elif role == "assistant":
+                        lines.append(f"AI: {content}")
+            else:
+                lines.append("No messages yet.")
+            lines.append("\n/new to clear memory")
+            text = "\n".join(lines)
+            await query.edit_message_text(text, reply_markup=back_kb, parse_mode=ParseMode.MARKDOWN)
+            return
+
     # --- INLINE QUERY ---
     async def inline_query_handler(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         query = update.inline_query
@@ -569,9 +981,13 @@ class MimoAIBot:
         persona_data = PERSONAS.get(persona, PERSONAS[DEFAULT_PERSONA])
         system_prompt = persona_data["prompt"]
 
-        messages = [{"role": "system", "content": system_prompt}, {"role": "user", "content": prompt}]
+        history.append({"role": "user", "content": prompt})
+        if len(history) > self.max_history * 2:
+            history[:] = history[-(self.max_history * 2):]
 
-        providers = self.ai.get_fallback_chain(active_model)
+        messages = [{"role": "system", "content": system_prompt}] + history
+
+        providers = self.ai.get_fallback_chain(active_model, custom_keys)
         reply = None
 
         for provider in providers:
@@ -579,11 +995,17 @@ class MimoAIBot:
                 api_key = os.getenv(provider["env_key"])
             else:
                 group_name = provider.get("group", active_model)
-                api_key = custom_keys.get(group_name)
+                key_data = custom_keys.get(group_name)
+                if isinstance(key_data, dict) and key_data.get("custom"):
+                    api_key = key_data["api_key"]
+                else:
+                    api_key = key_data
                 if not api_key:
                     continue
             try:
                 reply = await self.ai.chat(provider, messages, api_key, system_prompt)
+                history.append({"role": "assistant", "content": reply})
+                await self.db.save_user_data(chat_id, history, active_model, custom_keys, persona)
                 break
             except RateLimitError:
                 continue
@@ -592,6 +1014,8 @@ class MimoAIBot:
 
         if reply is None:
             reply = "AI is currently unavailable. Try again later."
+            if history and history[-1]["role"] == "user":
+                history.pop()
 
         source_chat = query.inline_message_id
         if source_chat:
@@ -610,42 +1034,140 @@ class MimoAIBot:
         args = context.args
         await safe_delete(update.message)
 
-        if len(args) != 2:
-            await context.bot.send_message(chat_id, "Usage: `/setkey <provider> <key>`", parse_mode=ParseMode.MARKDOWN)
-            return
+        if len(args) == 2:
+            group_name = args[0].lower()
+            api_key = args[1]
 
-        group_name = args[0].lower()
-        api_key = args[1]
+            byok_groups = {p["group"] for p in AI_PROVIDERS.values() if not p.get("is_free")} | set(BROWSE_GROUPS.keys())
+            if group_name not in byok_groups:
+                await context.bot.send_message(chat_id, f"'{group_name}' is not a valid BYOK provider.")
+                return
 
-        byok_groups = {p["group"] for p in AI_PROVIDERS.values() if not p.get("is_free")} | set(BROWSE_GROUPS.keys())
-        if group_name not in byok_groups:
-            await context.bot.send_message(chat_id, f"'{group_name}' is not a valid BYOK provider.")
-            return
+            status_msg = await context.bot.send_message(chat_id, f"Verifying your {group_name} key...")
+            is_valid = await self.ai.verify_key(group_name, api_key)
 
-        status_msg = await context.bot.send_message(chat_id, f"Verifying your {group_name} key...")
-        is_valid = await self.ai.verify_key(group_name, api_key)
+            if is_valid:
+                history, active_model, custom_keys, persona = await self.db.get_user_data(chat_id)
+                custom_keys[group_name] = api_key
+                await self.db.save_user_data(chat_id, history, active_model, custom_keys, persona)
+                await status_msg.edit_text(f"Key verified. Saved securely for `{group_name}`.", parse_mode=ParseMode.MARKDOWN)
+            else:
+                await status_msg.edit_text(f"Invalid key: rejected by {group_name}. Check the key and try again.")
 
-        if is_valid:
-            history, active_model, custom_keys, persona = await self.db.get_user_data(chat_id)
-            custom_keys[group_name] = api_key
-            await self.db.save_user_data(chat_id, history, active_model, custom_keys, persona)
-            await status_msg.edit_text(f"Key verified. Saved securely for `{group_name}`.", parse_mode=ParseMode.MARKDOWN)
+        elif len(args) == 3:
+            group_name = args[0].lower()
+            base_url = args[1].rstrip("/")
+            api_key = args[2]
+
+            chat_url = f"{base_url}/chat/completions"
+            models_url = f"{base_url}/models"
+
+            endpoint_meta = {
+                "api_key": api_key,
+                "base_url": base_url,
+                "chat_url": chat_url,
+                "models_url": models_url,
+                "custom": True,
+            }
+
+            status_msg = await context.bot.send_message(chat_id, f"Verifying your `{group_name}` key...")
+            is_valid = await self.ai.verify_key(group_name, api_key, endpoint_meta)
+
+            if is_valid:
+                history, active_model, custom_keys, persona = await self.db.get_user_data(chat_id)
+                custom_keys[group_name] = endpoint_meta
+                await self.db.save_user_data(chat_id, history, active_model, custom_keys, persona)
+                await status_msg.edit_text(
+                    f"Custom endpoint `{group_name}` verified and saved.\n"
+                    f"Base URL: `{base_url}`\n"
+                    f"Use `/model` to browse and select models.",
+                    parse_mode=ParseMode.MARKDOWN
+                )
+            else:
+                await status_msg.edit_text(f"Invalid key: rejected by `{group_name}`. Check the URL and key.")
+
         else:
-            await status_msg.edit_text(f"Invalid key: rejected by {group_name}. Check the key and try again.")
+            await context.bot.send_message(
+                chat_id,
+                "Usage:\n"
+                "`/setkey <provider> <key>`\n"
+                "`/setkey <name> <base_url> <key>` (custom endpoint)",
+                parse_mode=ParseMode.MARKDOWN
+            )
 
     # --- MODEL SELECTION ---
     async def model_cmd(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         chat_id = update.message.chat.id
-        _, active_model, _, _ = await self.db.get_user_data(chat_id)
-        keyboard = []
-        for key, provider in AI_PROVIDERS.items():
-            prefix = "> " if key == active_model else ""
-            keyboard.append([InlineKeyboardButton(f"{prefix}{provider['name']}", callback_data=f"setmodel_{key}")])
-        for group, g in BROWSE_GROUPS.items():
-            keyboard.append([InlineKeyboardButton(f"Browse {g['label']} models", callback_data=f"browse_{group}_0")])
+        _, _, custom_keys, _ = await self.db.get_user_data(chat_id)
+        keyboard = [
+            [InlineKeyboardButton("🆓 Free Models", callback_data="modelcat_free")],
+            [InlineKeyboardButton("🔑 BYOK Providers", callback_data="modelcat_byok")],
+            [InlineKeyboardButton("⚙️ Custom Endpoints", callback_data="modelcat_custom")],
+        ]
         await update.message.reply_text(
             "*Select your preferred AI Model:*", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.MARKDOWN
         )
+
+    async def model_category_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        query = update.callback_query
+        await query.answer()
+        chat_id = query.message.chat.id
+        category = query.data.split("_", 1)[1]
+        back_kb = InlineKeyboardMarkup([[InlineKeyboardButton("Back", callback_data="modelcat_back")]])
+
+        if category == "back":
+            _, _, custom_keys, _ = await self.db.get_user_data(chat_id)
+            keyboard = [
+                [InlineKeyboardButton("🆓 Free Models", callback_data="modelcat_free")],
+                [InlineKeyboardButton("🔑 BYOK Providers", callback_data="modelcat_byok")],
+                [InlineKeyboardButton("⚙️ Custom Endpoints", callback_data="modelcat_custom")],
+            ]
+            keyboard.append([InlineKeyboardButton("Back", callback_data="settings_root")])
+            await query.edit_message_text(
+                "*Select your preferred AI Model:*", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.MARKDOWN
+            )
+            return
+
+        if category == "free":
+            _, active_model, _, _ = await self.db.get_user_data(chat_id)
+            keyboard = []
+            for key, provider in AI_PROVIDERS.items():
+                prefix = "> " if key == active_model else ""
+                keyboard.append([InlineKeyboardButton(f"{prefix}🆓 {provider['name']}", callback_data=f"setmodel_{key}")])
+            keyboard.append([InlineKeyboardButton("Back", callback_data="modelcat_back")])
+            await query.edit_message_text(
+                "*Free Models*", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.MARKDOWN
+            )
+            return
+
+        if category == "byok":
+            keyboard = []
+            for group, g in BROWSE_GROUPS.items():
+                keyboard.append([InlineKeyboardButton(f"🔑 Browse {g['label']} models", callback_data=f"browse_{group}_0")])
+            keyboard.append([InlineKeyboardButton("Back", callback_data="modelcat_back")])
+            await query.edit_message_text(
+                "*BYOK Providers*\nSet a key first with `/setkey`",
+                reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.MARKDOWN
+            )
+            return
+
+        if category == "custom":
+            _, _, custom_keys, _ = await self.db.get_user_data(chat_id)
+            custom_endpoints = {k: v for k, v in custom_keys.items() if isinstance(v, dict) and v.get("custom")}
+            if not custom_endpoints:
+                await query.edit_message_text(
+                    "*Custom Endpoints*\n\nNo custom endpoints added.\nUse `/setkey <name> <base_url> <key>` to add one.",
+                    reply_markup=back_kb, parse_mode=ParseMode.MARKDOWN
+                )
+                return
+            keyboard = []
+            for group_name in custom_endpoints:
+                keyboard.append([InlineKeyboardButton(f"⚙️ Browse {group_name} models", callback_data=f"browse_{group_name}_0")])
+            keyboard.append([InlineKeyboardButton("Back", callback_data="modelcat_back")])
+            await query.edit_message_text(
+                "*Custom Endpoints*", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.MARKDOWN
+            )
+            return
 
     async def browse_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         query = update.callback_query
@@ -655,16 +1177,25 @@ class MimoAIBot:
         page = int(page)
 
         _, _, custom_keys, _ = await self.db.get_user_data(chat_id)
-        api_key = custom_keys.get(group)
-        if not api_key:
+        key_data = custom_keys.get(group)
+        if not key_data:
             await query.edit_message_text(
                 f"Set a key first: `/setkey {group} <your_key>`", parse_mode=ParseMode.MARKDOWN
             )
             return
 
-        models = await self.ai.get_group_models(group, api_key)
+        if isinstance(key_data, dict) and key_data.get("custom"):
+            api_key = key_data["api_key"]
+            endpoint_meta = key_data
+            label = group
+        else:
+            api_key = key_data
+            endpoint_meta = None
+            label = BROWSE_GROUPS.get(group, {}).get("label", group)
+
+        models = await self.ai.get_group_models(group, api_key, endpoint_meta)
         if not models:
-            await query.edit_message_text(f"Could not fetch {BROWSE_GROUPS[group]['label']} models. Try again shortly.")
+            await query.edit_message_text(f"Could not fetch {label} models. Try again shortly.")
             return
 
         start = page * OR_PAGE_SIZE
@@ -681,7 +1212,7 @@ class MimoAIBot:
 
         total_pages = (len(models) - 1) // OR_PAGE_SIZE + 1
         await query.edit_message_text(
-            f"*{BROWSE_GROUPS[group]['label']} Models* (page {page + 1}/{total_pages})",
+            f"*{label} Models* (page {page + 1}/{total_pages})",
             reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.MARKDOWN
         )
 
@@ -693,12 +1224,19 @@ class MimoAIBot:
         index = int(index)
 
         history, _, custom_keys, persona = await self.db.get_user_data(chat_id)
-        api_key = custom_keys.get(group)
-        if not api_key:
+        key_data = custom_keys.get(group)
+        if not key_data:
             await query.edit_message_text(f"Set a key first: `/setkey {group} <your_key>`", parse_mode=ParseMode.MARKDOWN)
             return
 
-        models = await self.ai.get_group_models(group, api_key)
+        if isinstance(key_data, dict) and key_data.get("custom"):
+            api_key = key_data["api_key"]
+            endpoint_meta = key_data
+        else:
+            api_key = key_data
+            endpoint_meta = None
+
+        models = await self.ai.get_group_models(group, api_key, endpoint_meta)
         if index >= len(models):
             await query.edit_message_text("That model list has refreshed, please run /model again.")
             return
@@ -770,7 +1308,7 @@ class MimoAIBot:
         cancel_event = asyncio.Event()
         self._cancel_flags[chat_id] = cancel_event
 
-        providers = self.ai.get_fallback_chain(active_model)
+        providers = self.ai.get_fallback_chain(active_model, custom_keys)
         reply = None
 
         for provider in providers:
@@ -781,7 +1319,11 @@ class MimoAIBot:
                 api_key = os.getenv(provider["env_key"])
             else:
                 group_name = provider.get("group", active_model)
-                api_key = custom_keys.get(group_name)
+                key_data = custom_keys.get(group_name)
+                if isinstance(key_data, dict) and key_data.get("custom"):
+                    api_key = key_data["api_key"]
+                else:
+                    api_key = key_data
                 if not api_key:
                     continue
 
@@ -825,6 +1367,20 @@ def main():
     bot = MimoAIBot()
     app = Application.builder().token(TELEGRAM_TOKEN).post_init(bot.post_init).post_shutdown(bot.post_shutdown).build()
 
+    admin_conv = ConversationHandler(
+        entry_points=[
+            CallbackQueryHandler(bot.admin_broadcast_conv, pattern="^admin_broadcast$"),
+            CallbackQueryHandler(bot.admin_adduser_conv, pattern="^admin_adduser$"),
+            CallbackQueryHandler(bot.admin_removeuser_conv, pattern="^admin_removeuser$"),
+        ],
+        states={
+            WAITING_BROADCAST: [MessageHandler(filters.TEXT & ~filters.COMMAND, bot.receive_broadcast)],
+            WAITING_ADD_USER: [MessageHandler(filters.TEXT & ~filters.COMMAND, bot.receive_adduser_input)],
+            WAITING_REMOVE_USER: [MessageHandler(filters.TEXT & ~filters.COMMAND, bot.receive_removeuser_input)],
+        },
+        fallbacks=[CommandHandler("cancel", bot.cancel_conv)],
+    )
+
     app.add_handler(CommandHandler("start", bot.start))
     app.add_handler(CommandHandler("new", bot.new_session))
     app.add_handler(CommandHandler("chat", bot.chat_cmd))
@@ -834,15 +1390,17 @@ def main():
     app.add_handler(CommandHandler("model", bot.model_cmd))
     app.add_handler(CommandHandler("setkey", bot.setkey_cmd))
     app.add_handler(CommandHandler("persona", bot.persona_cmd))
-    app.add_handler(CommandHandler("info", bot.info_cmd))
-    app.add_handler(CommandHandler("session", bot.session_cmd))
     app.add_handler(CommandHandler("help", bot.help_cmd))
-    app.add_handler(CommandHandler("stats", bot.stats_cmd))
+    app.add_handler(CommandHandler("admin", bot.admin_cmd))
+    app.add_handler(CommandHandler("settings", bot.settings_cmd))
     app.add_handler(CommandHandler("broadcast", bot.broadcast_cmd))
     app.add_handler(CommandHandler("adduser", bot.adduser_cmd))
     app.add_handler(CommandHandler("removeuser", bot.removeuser_cmd))
-    app.add_handler(CommandHandler("listusers", bot.listusers_cmd))
 
+    app.add_handler(admin_conv)
+    app.add_handler(CallbackQueryHandler(bot.admin_callback, pattern="^admin_"))
+    app.add_handler(CallbackQueryHandler(bot.settings_callback, pattern="^settings_"))
+    app.add_handler(CallbackQueryHandler(bot.model_category_callback, pattern="^modelcat_"))
     app.add_handler(CallbackQueryHandler(bot.model_callback, pattern="^setmodel_"))
     app.add_handler(CallbackQueryHandler(bot.persona_callback, pattern="^setpersona_"))
     app.add_handler(CallbackQueryHandler(bot.help_callback, pattern="^help_"))

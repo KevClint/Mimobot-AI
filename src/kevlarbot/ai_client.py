@@ -1,7 +1,7 @@
 import os
 import re
 import time
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 
 import httpx
 
@@ -17,19 +17,29 @@ class AIClient:
     async def close(self):
         await self.http_client.aclose()
 
-    def resolve_provider(self, active_model: str) -> Dict[str, Any]:
+    def resolve_provider(self, active_model: str, custom_keys: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         if active_model in AI_PROVIDERS:
             return AI_PROVIDERS[active_model]
         if ":" in active_model:
             group, model_id = active_model.split(":", 1)
+            if custom_keys:
+                key_data = custom_keys.get(group)
+                if isinstance(key_data, dict) and key_data.get("custom"):
+                    return {
+                        "name": f"{model_id} ({group})",
+                        "url": key_data["chat_url"],
+                        "model_id": model_id,
+                        "is_free": False,
+                        "group": group,
+                    }
             g = BROWSE_GROUPS.get(group)
             if g:
                 return {"name": f"{model_id} ({g['label']})", "url": g["chat_url"],
                         "model_id": model_id, "is_free": False, "group": group}
         return AI_PROVIDERS["mimo"]
 
-    def get_fallback_chain(self, active_model: str) -> List[Dict[str, Any]]:
-        primary = self.resolve_provider(active_model)
+    def get_fallback_chain(self, active_model: str, custom_keys: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
+        primary = self.resolve_provider(active_model, custom_keys)
         providers = [primary]
         if primary.get("is_free"):
             fallback_keys = [k for k in AI_PROVIDERS if k != active_model and AI_PROVIDERS[k].get("is_free")]
@@ -37,19 +47,25 @@ class AIClient:
                 providers.append(AI_PROVIDERS[k])
         return providers
 
-    async def get_group_models(self, group: str, api_key: str) -> List[Dict[str, str]]:
+    async def get_group_models(self, group: str, api_key: str, endpoint_meta: Optional[Dict[str, Any]] = None) -> List[Dict[str, str]]:
         from kevlarbot.config import OR_CACHE_TTL
-        g = BROWSE_GROUPS[group]
         now = time.time()
         cached = self._model_cache.get(group, {"data": [], "ts": 0})
         if cached["data"] and now - cached["ts"] < OR_CACHE_TTL:
             return cached["data"]
         try:
-            if group in ANTHROPIC_GROUPS:
+            if endpoint_meta:
+                models_url = endpoint_meta.get("models_url")
+                headers = {"Authorization": f"Bearer {api_key}"}
+            elif group in ANTHROPIC_GROUPS:
+                g = BROWSE_GROUPS[group]
+                models_url = g["models_url"]
                 headers = {"x-api-key": api_key, "anthropic-version": "2023-06-01"}
             else:
+                g = BROWSE_GROUPS[group]
+                models_url = g["models_url"]
                 headers = {"Authorization": f"Bearer {api_key}"}
-            resp = await self.http_client.get(g["models_url"], headers=headers)
+            resp = await self.http_client.get(models_url, headers=headers)
             resp.raise_for_status()
             items = resp.json().get("data", [])
             models = [{"id": m["id"], "name": m.get("display_name") or m.get("name", m["id"])} for m in items]
@@ -59,8 +75,14 @@ class AIClient:
             logger.error(f"{group} model list fetch failed: {self._sanitize_error(e)}")
             return cached["data"]
 
-    async def verify_key(self, group_name: str, api_key: str) -> bool:
+    async def verify_key(self, group_name: str, api_key: str, endpoint_meta: Optional[Dict[str, Any]] = None) -> bool:
         try:
+            if endpoint_meta:
+                models_url = endpoint_meta.get("models_url")
+                headers = {"Authorization": f"Bearer {api_key}"}
+                resp = await self.http_client.get(models_url, headers=headers, timeout=10.0)
+                return resp.status_code == 200
+
             if group_name in ANTHROPIC_GROUPS:
                 headers = {"x-api-key": api_key, "anthropic-version": "2023-06-01"}
                 body = {"model": "claude-sonnet-4-20250514", "max_tokens": 1, "messages": [{"role": "user", "content": "hi"}]}
