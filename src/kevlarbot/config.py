@@ -1,5 +1,6 @@
-import os
 import logging
+import os
+
 from cryptography.fernet import Fernet
 
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
@@ -17,6 +18,7 @@ _fernet = Fernet(ENCRYPTION_KEY.encode() if isinstance(ENCRYPTION_KEY, str) else
 TELEGRAM_MSG_LIMIT = 4000
 OR_PAGE_SIZE = 8
 OR_CACHE_TTL = 3600
+
 
 def get_fernet() -> Fernet:
     return _fernet

@@ -1,13 +1,13 @@
-import time
 import asyncio
+import time
 
-from telegram import Update, constants, InlineQueryResultArticle, InputTextMessageContent
+from telegram import InlineQueryResultArticle, InputTextMessageContent, Update, constants
 from telegram.constants import ParseMode
-from telegram.ext import ContextTypes
 from telegram.error import BadRequest
+from telegram.ext import ContextTypes
 
-from kevlarbot.providers import DEFAULT_PERSONA
 from kevlarbot.ai_client import AuthError
+from kevlarbot.providers import DEFAULT_PERSONA
 from kevlarbot.utils import safe_delete, send_reply
 
 WELCOME_TEXT = (
@@ -57,7 +57,8 @@ class ChatHandlers:
         await self.db.clear_history(chat_id)
         await safe_delete(update.message)
         await context.bot.send_message(
-            chat_id, "Fresh session started. Memory cleared, keys and model kept.",
+            chat_id,
+            "Fresh session started. Memory cleared, keys and model kept.",
             parse_mode=ParseMode.MARKDOWN,
         )
 
@@ -141,6 +142,9 @@ class ChatHandlers:
 
         self._last_user_msg[chat_id] = user_text
 
+        if user_text.lower().strip() in ("continue", "continue:"):
+            user_text = "Please continue your previous response from where you left off."
+
         typing_task = asyncio.create_task(self._keep_typing(chat_id, context))
         cancel_event = asyncio.Event()
         self._cancel_flags[chat_id] = cancel_event
@@ -173,7 +177,7 @@ class ChatHandlers:
         if not text.startswith("/chat"):
             return
 
-        prompt = text[len("/chat"):].strip()
+        prompt = text[len("/chat") :].strip()
         if not prompt:
             results = [
                 InlineQueryResultArticle(

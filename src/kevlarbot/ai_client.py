@@ -1,22 +1,22 @@
 import re
 import time
-from typing import List, Dict, Any, Optional
+from typing import Any
 
 import httpx
 
 from kevlarbot.config import logger
-from kevlarbot.providers import AI_PROVIDERS, BROWSE_GROUPS, ANTHROPIC_GROUPS
+from kevlarbot.providers import AI_PROVIDERS, ANTHROPIC_GROUPS, BROWSE_GROUPS
 
 
 class AIClient:
     def __init__(self):
         self.http_client = httpx.AsyncClient(timeout=30.0)
-        self._model_cache: Dict[str, Dict[str, Any]] = {}
+        self._model_cache: dict[str, dict[str, Any]] = {}
 
     async def close(self):
         await self.http_client.aclose()
 
-    def resolve_provider(self, active_model: str, custom_keys: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    def resolve_provider(self, active_model: str, custom_keys: dict[str, Any] | None = None) -> dict[str, Any]:
         if active_model in AI_PROVIDERS:
             return AI_PROVIDERS[active_model]
         if ":" in active_model:
@@ -33,11 +33,16 @@ class AIClient:
                     }
             g = BROWSE_GROUPS.get(group)
             if g:
-                return {"name": f"{model_id} ({g['label']})", "url": g["chat_url"],
-                        "model_id": model_id, "is_free": False, "group": group}
+                return {
+                    "name": f"{model_id} ({g['label']})",
+                    "url": g["chat_url"],
+                    "model_id": model_id,
+                    "is_free": False,
+                    "group": group,
+                }
         return AI_PROVIDERS["mimo"]
 
-    def get_fallback_chain(self, active_model: str, custom_keys: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
+    def get_fallback_chain(self, active_model: str, custom_keys: dict[str, Any] | None = None) -> list[dict[str, Any]]:
         primary = self.resolve_provider(active_model, custom_keys)
         providers = [primary]
         if primary.get("is_free"):
@@ -46,8 +51,11 @@ class AIClient:
                 providers.append(AI_PROVIDERS[k])
         return providers
 
-    async def get_group_models(self, group: str, api_key: str, endpoint_meta: Optional[Dict[str, Any]] = None) -> List[Dict[str, str]]:
+    async def get_group_models(
+        self, group: str, api_key: str, endpoint_meta: dict[str, Any] | None = None
+    ) -> list[dict[str, str]]:
         from kevlarbot.config import OR_CACHE_TTL
+
         now = time.time()
         cached = self._model_cache.get(group, {"data": [], "ts": 0})
         if cached["data"] and now - cached["ts"] < OR_CACHE_TTL:
@@ -74,7 +82,7 @@ class AIClient:
             logger.error(f"{group} model list fetch failed: {self._sanitize_error(e)}")
             return cached["data"]
 
-    async def verify_key(self, group_name: str, api_key: str, endpoint_meta: Optional[Dict[str, Any]] = None) -> bool:
+    async def verify_key(self, group_name: str, api_key: str, endpoint_meta: dict[str, Any] | None = None) -> bool:
         try:
             if endpoint_meta:
                 models_url = endpoint_meta.get("models_url")
@@ -84,7 +92,11 @@ class AIClient:
 
             if group_name in ANTHROPIC_GROUPS:
                 headers = {"x-api-key": api_key, "anthropic-version": "2023-06-01"}
-                body = {"model": "claude-sonnet-4-20250514", "max_tokens": 1, "messages": [{"role": "user", "content": "hi"}]}
+                body = {
+                    "model": "claude-sonnet-4-20250514",
+                    "max_tokens": 1,
+                    "messages": [{"role": "user", "content": "hi"}],
+                }
                 resp = await self.http_client.post(
                     BROWSE_GROUPS[group_name]["chat_url"], json=body, headers=headers, timeout=10.0
                 )
@@ -101,21 +113,29 @@ class AIClient:
                 return False
             response = await self.http_client.post(
                 provider["url"],
-                json={"model": provider["model_id"], "messages": [{"role": "user", "content": "ping"}], "max_tokens": 1},
+                json={
+                    "model": provider["model_id"],
+                    "messages": [{"role": "user", "content": "ping"}],
+                    "max_tokens": 1,
+                },
                 headers={"Authorization": f"Bearer {api_key}"},
-                timeout=10.0
+                timeout=10.0,
             )
             return response.status_code == 200
         except Exception as e:
             logger.error(f"Verification error for {group_name}: {self._sanitize_error(e)}")
             return False
 
-    async def chat(self, provider: Dict[str, Any], messages: list, api_key: str, system_prompt: str) -> str:
+    async def chat(self, provider: dict[str, Any], messages: list, api_key: str, system_prompt: str) -> str:
         is_anthropic = provider.get("group") in ANTHROPIC_GROUPS
         if is_anthropic:
             headers = {"x-api-key": api_key, "anthropic-version": "2023-06-01"}
-            body = {"model": provider["model_id"], "system": system_prompt,
-                    "messages": [m for m in messages if m.get("role") != "system"], "max_tokens": 256}
+            body = {
+                "model": provider["model_id"],
+                "system": system_prompt,
+                "messages": [m for m in messages if m.get("role") != "system"],
+                "max_tokens": 256,
+            }
         else:
             headers = {"Authorization": f"Bearer {api_key}"}
             body = {"model": provider["model_id"], "messages": messages, "max_tokens": 256}

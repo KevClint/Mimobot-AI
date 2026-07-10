@@ -1,4 +1,4 @@
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.constants import ParseMode
 from telegram.ext import ContextTypes
 
@@ -42,7 +42,9 @@ class ModelHandlers:
             keyboard = []
             for key, provider in AI_PROVIDERS.items():
                 prefix = "> " if key == active_model else ""
-                keyboard.append([InlineKeyboardButton(f"{prefix}\U0001f193 {provider['name']}", callback_data=f"setmodel_{key}")])
+                keyboard.append(
+                    [InlineKeyboardButton(f"{prefix}\U0001f193 {provider['name']}", callback_data=f"setmodel_{key}")]
+                )
             keyboard.append([InlineKeyboardButton("Back", callback_data="modelcat_back")])
             await query.edit_message_text(
                 "*Free Models*", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.MARKDOWN
@@ -52,7 +54,9 @@ class ModelHandlers:
         if category == "byok":
             keyboard = []
             for group, g in BROWSE_GROUPS.items():
-                keyboard.append([InlineKeyboardButton(f"\U0001f511 Browse {g['label']} models", callback_data=f"browse_{group}_0")])
+                keyboard.append(
+                    [InlineKeyboardButton(f"\U0001f511 Browse {g['label']} models", callback_data=f"browse_{group}_0")]
+                )
             keyboard.append([InlineKeyboardButton("Back", callback_data="modelcat_back")])
             await query.edit_message_text(
                 "*BYOK Providers*\nSet a key first with `/setkey`",
@@ -73,7 +77,13 @@ class ModelHandlers:
                 return
             keyboard = []
             for group_name in custom_endpoints:
-                keyboard.append([InlineKeyboardButton(f"\u2699\ufe0f Browse {group_name} models", callback_data=f"browse_{group_name}_0")])
+                keyboard.append(
+                    [
+                        InlineKeyboardButton(
+                            f"\u2699\ufe0f Browse {group_name} models", callback_data=f"browse_{group_name}_0"
+                        )
+                    ]
+                )
             keyboard.append([InlineKeyboardButton("Back", callback_data="modelcat_back")])
             await query.edit_message_text(
                 "*Custom Endpoints*", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.MARKDOWN
@@ -110,7 +120,7 @@ class ModelHandlers:
             return
 
         start = page * OR_PAGE_SIZE
-        chunk = models[start:start + OR_PAGE_SIZE]
+        chunk = models[start : start + OR_PAGE_SIZE]
         keyboard = [
             [InlineKeyboardButton(m["name"][:60], callback_data=f"browseset_{group}_{start + i}")]
             for i, m in enumerate(chunk)
@@ -189,7 +199,9 @@ class ModelHandlers:
             group_name = args[0].lower()
             api_key = args[1]
 
-            byok_groups = {p["group"] for p in AI_PROVIDERS.values() if not p.get("is_free")} | set(BROWSE_GROUPS.keys())
+            byok_groups = {p["group"] for p in AI_PROVIDERS.values() if not p.get("is_free")} | set(
+                BROWSE_GROUPS.keys()
+            )
             if group_name not in byok_groups:
                 await context.bot.send_message(chat_id, f"'{group_name}' is not a valid BYOK provider.")
                 return
@@ -201,7 +213,9 @@ class ModelHandlers:
                 history, active_model, custom_keys, persona = await self.db.get_user_data(chat_id)
                 custom_keys[group_name] = api_key
                 await self.db.save_user_data(chat_id, history, active_model, custom_keys, persona)
-                await status_msg.edit_text(f"Key verified. Saved securely for `{group_name}`.", parse_mode=ParseMode.MARKDOWN)
+                await status_msg.edit_text(
+                    f"Key verified. Saved securely for `{group_name}`.", parse_mode=ParseMode.MARKDOWN
+                )
             else:
                 await status_msg.edit_text(f"Invalid key: rejected by {group_name}. Check the key and try again.")
 
@@ -240,8 +254,6 @@ class ModelHandlers:
         else:
             await context.bot.send_message(
                 chat_id,
-                "Usage:\n"
-                "`/setkey <provider> <key>`\n"
-                "`/setkey <name> <base_url> <key>` (custom endpoint)",
+                "Usage:\n`/setkey <provider> <key>`\n`/setkey <name> <base_url> <key>` (custom endpoint)",
                 parse_mode=ParseMode.MARKDOWN,
             )

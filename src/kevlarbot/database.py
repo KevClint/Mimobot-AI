@@ -1,6 +1,6 @@
 import json
 import time
-from typing import List, Dict, Tuple, Optional, Any
+from typing import Any
 
 import aiosqlite
 
@@ -11,7 +11,7 @@ from kevlarbot.providers import DEFAULT_PERSONA
 class KevlarDB:
     def __init__(self, db_name: str = "kevlarbot.db"):
         self.db_name = db_name
-        self.db: Optional[aiosqlite.Connection] = None
+        self.db: aiosqlite.Connection | None = None
         self._fernet = get_fernet()
 
     async def connect(self):
@@ -23,7 +23,7 @@ class KevlarDB:
             await self.db.close()
 
     async def _init_tables(self):
-        await self.db.execute('''
+        await self.db.execute("""
             CREATE TABLE IF NOT EXISTS users_v3 (
                 chat_id INTEGER PRIMARY KEY,
                 history TEXT,
@@ -36,7 +36,7 @@ class KevlarDB:
                 joined_at REAL,
                 last_updated REAL
             )
-        ''')
+        """)
         cursor = await self.db.execute("PRAGMA table_info(users_v3)")
         cols = {row[1] for row in await cursor.fetchall()}
         if "persona" not in cols:
@@ -51,12 +51,12 @@ class KevlarDB:
             await self.db.execute("ALTER TABLE users_v3 ADD COLUMN display_name TEXT")
         await self.db.commit()
 
-    def _encrypt_keys(self, keys: Dict[str, str]) -> str:
+    def _encrypt_keys(self, keys: dict[str, str]) -> str:
         if not keys:
             return "{}"
         return json.dumps({k: self._fernet.encrypt(v.encode()).decode() for k, v in keys.items()})
 
-    def _decrypt_keys(self, raw: str) -> Dict[str, str]:
+    def _decrypt_keys(self, raw: str) -> dict[str, str]:
         if not raw:
             return {}
         try:
@@ -65,7 +65,7 @@ class KevlarDB:
         except Exception:
             return json.loads(raw) if raw else {}
 
-    async def get_user_data(self, chat_id: int) -> Tuple[List[Dict[str, str]], str, Dict[str, str], str]:
+    async def get_user_data(self, chat_id: int) -> tuple[list[dict[str, str]], str, dict[str, str], str]:
         async with self.db.execute(
             "SELECT history, active_model, custom_keys, persona FROM users_v3 WHERE chat_id = ?", (chat_id,)
         ) as cursor:
@@ -79,42 +79,31 @@ class KevlarDB:
             return [], "mimo", {}, DEFAULT_PERSONA
 
     async def is_user_allowed(self, chat_id: int) -> bool:
-        async with self.db.execute(
-            "SELECT is_allowed FROM users_v3 WHERE chat_id = ?", (chat_id,)
-        ) as cursor:
+        async with self.db.execute("SELECT is_allowed FROM users_v3 WHERE chat_id = ?", (chat_id,)) as cursor:
             row = await cursor.fetchone()
             if row:
                 return bool(row[0])
             return False
 
     async def user_exists(self, chat_id: int) -> bool:
-        async with self.db.execute(
-            "SELECT 1 FROM users_v3 WHERE chat_id = ?", (chat_id,)
-        ) as cursor:
+        async with self.db.execute("SELECT 1 FROM users_v3 WHERE chat_id = ?", (chat_id,)) as cursor:
             return await cursor.fetchone() is not None
 
     async def set_user_allowed(self, chat_id: int, allowed: bool):
-        await self.db.execute(
-            "UPDATE users_v3 SET is_allowed = ? WHERE chat_id = ?",
-            (1 if allowed else 0, chat_id)
-        )
+        await self.db.execute("UPDATE users_v3 SET is_allowed = ? WHERE chat_id = ?", (1 if allowed else 0, chat_id))
         await self.db.commit()
 
-    async def get_user_by_username(self, username: str) -> Optional[int]:
+    async def get_user_by_username(self, username: str) -> int | None:
         clean = username.lstrip("@").lower()
-        async with self.db.execute(
-            "SELECT chat_id FROM users_v3 WHERE LOWER(username) = ?", (clean,)
-        ) as cursor:
+        async with self.db.execute("SELECT chat_id FROM users_v3 WHERE LOWER(username) = ?", (clean,)) as cursor:
             row = await cursor.fetchone()
             return row[0] if row else None
 
     async def get_user_by_id(self, chat_id: int) -> bool:
-        async with self.db.execute(
-            "SELECT 1 FROM users_v3 WHERE chat_id = ?", (chat_id,)
-        ) as cursor:
+        async with self.db.execute("SELECT 1 FROM users_v3 WHERE chat_id = ?", (chat_id,)) as cursor:
             return await cursor.fetchone() is not None
 
-    async def get_all_users(self) -> List[Dict[str, Any]]:
+    async def get_all_users(self) -> list[dict[str, Any]]:
         async with self.db.execute(
             "SELECT chat_id, username, display_name, is_allowed, joined_at FROM users_v3 ORDER BY joined_at"
         ) as cursor:
@@ -130,11 +119,19 @@ class KevlarDB:
                 for row in rows
             ]
 
-    async def save_user_data(self, chat_id: int, history: List[Dict[str, str]], active_model: str,
-                              custom_keys: Dict[str, str], persona: str,
-                              username: Optional[str] = None, display_name: Optional[str] = None):
+    async def save_user_data(
+        self,
+        chat_id: int,
+        history: list[dict[str, str]],
+        active_model: str,
+        custom_keys: dict[str, str],
+        persona: str,
+        username: str | None = None,
+        display_name: str | None = None,
+    ):
         now = time.time()
-        await self.db.execute('''
+        await self.db.execute(
+            """
             INSERT INTO users_v3 (chat_id, history, active_model, custom_keys, persona, username, display_name, joined_at, last_updated)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(chat_id) DO UPDATE SET
@@ -145,15 +142,26 @@ class KevlarDB:
             username=COALESCE(excluded.username, users_v3.username),
             display_name=COALESCE(excluded.display_name, users_v3.display_name),
             last_updated=excluded.last_updated
-        ''', (chat_id, json.dumps(history), active_model, self._encrypt_keys(custom_keys), persona,
-              username, display_name, now, now))
+        """,
+            (
+                chat_id,
+                json.dumps(history),
+                active_model,
+                self._encrypt_keys(custom_keys),
+                persona,
+                username,
+                display_name,
+                now,
+                now,
+            ),
+        )
         await self.db.commit()
 
     async def clear_history(self, chat_id: int):
         history, active_model, custom_keys, persona = await self.get_user_data(chat_id)
         await self.save_user_data(chat_id, [], active_model, custom_keys, persona)
 
-    async def all_chat_ids(self) -> List[int]:
+    async def all_chat_ids(self) -> list[int]:
         async with self.db.execute("SELECT chat_id FROM users_v3") as cursor:
             return [row[0] for row in await cursor.fetchall()]
 

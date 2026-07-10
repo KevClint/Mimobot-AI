@@ -1,17 +1,16 @@
+import asyncio
 import os
 import time
-import asyncio
-from typing import Dict, Tuple, Optional, List
 
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.constants import ParseMode
-from telegram.ext import ContextTypes
 from telegram.error import BadRequest
+from telegram.ext import ContextTypes
 
-from kevlarbot.config import TELEGRAM_TOKEN, ADMIN_IDS, logger
-from kevlarbot.providers import AI_PROVIDERS, PERSONAS, DEFAULT_PERSONA
-from kevlarbot.database import KevlarDB
 from kevlarbot.ai_client import AIClient, AuthError, RateLimitError
+from kevlarbot.config import ADMIN_IDS, TELEGRAM_TOKEN, logger
+from kevlarbot.database import KevlarDB
+from kevlarbot.providers import AI_PROVIDERS, DEFAULT_PERSONA, PERSONAS
 from kevlarbot.utils import make_bar
 
 
@@ -24,10 +23,10 @@ class KevlarBotBase:
         self.daily_limit = 100
         self.db = KevlarDB()
         self.ai = AIClient()
-        self.last_msg_time: Dict[int, float] = {}
-        self._daily_counts: Dict[int, Tuple[str, int]] = {}
-        self._last_user_msg: Dict[int, str] = {}
-        self._cancel_flags: Dict[int, asyncio.Event] = {}
+        self.last_msg_time: dict[int, float] = {}
+        self._daily_counts: dict[int, tuple[str, int]] = {}
+        self._last_user_msg: dict[int, str] = {}
+        self._cancel_flags: dict[int, asyncio.Event] = {}
 
     def is_admin(self, chat_id: int) -> bool:
         return chat_id in ADMIN_IDS
@@ -91,7 +90,7 @@ class KevlarBotBase:
 
     # --- Shared broadcast logic ---
 
-    async def _broadcast_message(self, text: str, context: ContextTypes.DEFAULT_TYPE) -> Tuple[int, int]:
+    async def _broadcast_message(self, text: str, context: ContextTypes.DEFAULT_TYPE) -> tuple[int, int]:
         """Broadcast text to all registered users. Returns (sent, failed)."""
         ids = await self.db.all_chat_ids()
         sem = asyncio.Semaphore(20)
@@ -121,7 +120,7 @@ class KevlarBotBase:
 
     # --- User target resolution ---
 
-    async def _resolve_target(self, update: Update, context) -> Optional[Tuple[int, Optional[str]]]:
+    async def _resolve_target(self, update: Update, context) -> tuple[int, str | None] | None:
         """Resolve target user from reply, numeric ID, or username. Returns (chat_id, label) or None."""
         if update.message.reply_to_message:
             target_id = update.message.reply_to_message.from_user.id
@@ -161,15 +160,18 @@ class KevlarBotBase:
     # --- Shared AI chat logic ---
 
     async def _run_ai_chat(
-        self, chat_id: int, prompt: str, cancel_event: Optional[asyncio.Event] = None,
-    ) -> Optional[str]:
+        self,
+        chat_id: int,
+        prompt: str,
+        cancel_event: asyncio.Event | None = None,
+    ) -> str | None:
         """Run AI chat with fallback chain. Returns reply text or None."""
         history, active_model, custom_keys, persona = await self.db.get_user_data(chat_id)
         system_prompt = self._get_persona_prompt(persona)
 
         history.append({"role": "user", "content": prompt})
         if len(history) > self.max_history * 2:
-            history[:] = history[-(self.max_history * 2):]
+            history[:] = history[-(self.max_history * 2) :]
 
         messages = [{"role": "system", "content": system_prompt}] + history
         providers = self.ai.get_fallback_chain(active_model, custom_keys)
@@ -222,7 +224,7 @@ class KevlarBotBase:
 
     # --- Shared keyboard builders ---
 
-    def _model_category_keyboard(self) -> List[List[InlineKeyboardButton]]:
+    def _model_category_keyboard(self) -> list[list[InlineKeyboardButton]]:
         return [
             [InlineKeyboardButton("\U0001f193 Free Models", callback_data="modelcat_free")],
             [InlineKeyboardButton("\U0001f511 BYOK Providers", callback_data="modelcat_byok")],
@@ -270,21 +272,21 @@ class KevlarBotBase:
         lines.append("\n/new to clear memory")
         return "\n".join(lines)
 
-    async def _admin_panel(self, chat_id: int) -> Tuple[str, InlineKeyboardMarkup]:
+    async def _admin_panel(self, chat_id: int) -> tuple[str, InlineKeyboardMarkup]:
         count = await self.db.user_count()
         users = await self.db.get_all_users()
         allowed_count = sum(1 for u in users if u["is_allowed"])
         pending_count = len(users) - allowed_count
-        text = (
-            "*Admin Panel*\n\n"
-            f"Registered users: `{count}`\n"
-            f"Allowed: `{allowed_count}` | Pending: `{pending_count}`"
-        )
+        text = f"*Admin Panel*\n\nRegistered users: `{count}`\nAllowed: `{allowed_count}` | Pending: `{pending_count}`"
         keyboard = [
-            [InlineKeyboardButton("Stats", callback_data="admin_stats"),
-             InlineKeyboardButton("Users", callback_data="admin_users")],
-            [InlineKeyboardButton("Broadcast", callback_data="admin_broadcast"),
-             InlineKeyboardButton("Add User", callback_data="admin_adduser")],
+            [
+                InlineKeyboardButton("Stats", callback_data="admin_stats"),
+                InlineKeyboardButton("Users", callback_data="admin_users"),
+            ],
+            [
+                InlineKeyboardButton("Broadcast", callback_data="admin_broadcast"),
+                InlineKeyboardButton("Add User", callback_data="admin_adduser"),
+            ],
             [InlineKeyboardButton("Remove User", callback_data="admin_removeuser")],
         ]
         return text, InlineKeyboardMarkup(keyboard)
@@ -294,13 +296,10 @@ class KevlarBotBase:
         allowed_count = sum(1 for u in users if u["is_allowed"])
         pending_count = len(users) - allowed_count
         return (
-            "*Bot Stats*\n\n"
-            f"Total registered: `{len(users)}`\n"
-            f"Allowed: `{allowed_count}`\n"
-            f"Pending: `{pending_count}`"
+            f"*Bot Stats*\n\nTotal registered: `{len(users)}`\nAllowed: `{allowed_count}`\nPending: `{pending_count}`"
         )
 
-    def _format_user_list(self, users: list, limit: Optional[int] = None) -> str:
+    def _format_user_list(self, users: list, limit: int | None = None) -> str:
         items = users[:limit] if limit else users
         lines = [f"*All Users ({len(users)})*\n"]
         for u in items:

@@ -1,5 +1,4 @@
 import io
-from typing import List
 
 from telegram import Update
 from telegram.constants import ParseMode
@@ -15,7 +14,7 @@ async def safe_delete(message):
         pass
 
 
-def split_message(text: str, limit: int = TELEGRAM_MSG_LIMIT) -> List[str]:
+def split_message(text: str, limit: int = TELEGRAM_MSG_LIMIT) -> list[str]:
     if len(text) <= limit:
         return [text]
     chunks = []
@@ -60,10 +59,7 @@ async def send_as_file(update: Update, text: str):
     ext = "py" if "def " in text or "import " in text else "txt"
     bio = io.BytesIO(text.encode("utf-8"))
     bio.name = f"response.{ext}"
-    await update.message.reply_document(
-        document=bio,
-        caption="Response was long, so I sent it as a file."
-    )
+    await update.message.reply_document(document=bio, caption="Response was long, so I sent it as a file.")
 
 
 def make_bar(used: int, total: int, width: int = 10) -> str:

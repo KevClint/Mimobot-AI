@@ -1,18 +1,22 @@
+from telegram.ext import (
+    Application,
+    CallbackQueryHandler,
+    CommandHandler,
+    ConversationHandler,
+    InlineQueryHandler,
+    MessageHandler,
+    filters,
+)
+
+from kevlarbot.ai_client import AIClient as AIClient
 from kevlarbot.config import TELEGRAM_TOKEN, logger
 from kevlarbot.database import KevlarDB as KevlarDB
-from kevlarbot.ai_client import AIClient as AIClient
-
+from kevlarbot.handlers.admin import WAITING_ADD_USER, WAITING_BROADCAST, WAITING_REMOVE_USER, AdminHandlers
 from kevlarbot.handlers.base import KevlarBotBase
-from kevlarbot.handlers.admin import AdminHandlers, WAITING_BROADCAST, WAITING_ADD_USER, WAITING_REMOVE_USER
 from kevlarbot.handlers.chat import ChatHandlers
+from kevlarbot.handlers.help import HelpHandlers
 from kevlarbot.handlers.models import ModelHandlers
 from kevlarbot.handlers.settings import SettingsHandlers
-from kevlarbot.handlers.help import HelpHandlers
-
-from telegram.ext import (
-    Application, MessageHandler, CommandHandler, CallbackQueryHandler,
-    InlineQueryHandler, filters, ConversationHandler,
-)
 
 
 class KevlarBot(
@@ -37,13 +41,7 @@ class KevlarBot(
 
 def main():
     bot = KevlarBot()
-    app = (
-        Application.builder()
-        .token(TELEGRAM_TOKEN)
-        .post_init(bot.post_init)
-        .post_shutdown(bot.post_shutdown)
-        .build()
-    )
+    app = Application.builder().token(TELEGRAM_TOKEN).post_init(bot.post_init).post_shutdown(bot.post_shutdown).build()
 
     admin_conv = ConversationHandler(
         entry_points=[
